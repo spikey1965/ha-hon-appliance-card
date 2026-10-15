@@ -1,6 +1,6 @@
 # hOn Washer & Dryer Card for Home Assistant
 
-Dashboard cards for washing machines and tumble dryers in the **hOn** app (**Haier, Candy, Hoover**). The machine looks like the real thing: the time left on its own display, a progress ring round the door, laundry spinning in the drum, and buttons to pause it or start a programme without walking to the utility room.
+Dashboard cards for washing machines and tumble dryers in the **hOn** app (**Haier, Candy, Hoover**), and for **Samsung** machines through SmartThings ([see below](#samsung-smartthings)). The machine looks like the real thing: the time left on its own display, a progress ring round the door, laundry spinning in the drum, and buttons to pause it or start a programme without walking to the utility room.
 
 ![Washer and dryer card demo](images/demo.gif)
 
@@ -42,7 +42,7 @@ Both cards are in one file, with the pictures built in.
 
 1. Download `hon-appliance-card.js` from the [latest release](../../releases/latest).
 2. Copy it to `config/www/hon-appliance-card.js`.
-3. Go to **Settings → Dashboards → ⋮ → Resources**, add `/local/hon-appliance-card.js?v=2.0.0` as a **JavaScript module**, then reload your browser.
+3. Go to **Settings → Dashboards → ⋮ → Resources**, add `/local/hon-appliance-card.js?v=2.1.0` as a **JavaScript module**, then reload your browser.
 
 ## Use
 
@@ -82,7 +82,8 @@ entity: hoover_washer
 | Option | Card | What it does |
 |---|---|---|
 | `appliance` | both | `washer` or `dryer` (required) |
-| `entity` | both | Start of your entity IDs. Default `washing_machine` / `tumble_dryer` |
+| `integration` | both | `hon` (default) or `smartthings` for Samsung machines |
+| `entity` | both | Start of your entity IDs. Default `washing_machine` / `tumble_dryer` (SmartThings: `washer` / `dryer`) |
 | `name` | both | Card title. Default Washer / Dryer |
 | `colour` | both | Accent colour, e.g. `"#4fb3ff"` |
 | `max_width` | appliance | How wide the machine can get, e.g. `380px` |
@@ -127,6 +128,36 @@ To make the progress ring, display and icons line up, draw your machine the same
 
 The programmes card starts a cycle with the `hon.start_program` action, using the programme's default temperature and spin. To see which keys your machine accepts, go to **Developer tools → Actions**, pick **hon.start_program**, choose your machine and enter a made-up programme such as `test`. The error lists every programme it accepts. Put the ones you use most in `favourites`.
 
+### Samsung (SmartThings)
+
+Samsung washers and dryers work with Home Assistant's built-in **SmartThings** integration. Add `integration: smartthings` to the appliance card, and `entity` with the start of your entity IDs if your machine isn't called "Washer" or "Dryer" in SmartThings:
+
+```yaml
+type: custom:hon-appliance-card
+appliance: washer
+integration: smartthings
+entity: samsung_washer      # if your sensor is sensor.samsung_washer_machine_state
+```
+
+The card reads these entities (shown for `entity: washer`):
+
+| Entity | Used for |
+|---|---|
+| `sensor.washer_machine_state` | Running, paused or stopped (required) |
+| `sensor.washer_job_state` | The phase: Washing, Rinse, Spin, Drying, Cooldown, Finished |
+| `sensor.washer_completion_time` | The countdown and the finish time |
+| `sensor.washer_progress` | The progress ring |
+| `binary_sensor.washer_remote_control` | The Remote Control icon, and whether the buttons show |
+| `select.washer` | Start, Pause, Resume and Stop |
+| `switch.washer` | Off |
+| `select.washer_water_temperature`, `select.washer_spin_level` | Temperature and spin (washers) |
+
+What's different from hOn:
+
+- **Start** replaces the programmes card. SmartThings doesn't tell Home Assistant which programmes the machine has, so choose one on the machine, switch on Remote Control (Smart Control), and press **Start** on the card. The programmes card shows a short note instead of buttons.
+- **Stop** cancels the cycle (like Standby on hOn). **Off** appears if the machine has a power switch entity.
+- No programme name, dry level or cycle count, because the integration doesn't expose them.
+
 ## Thanks
 
 Thanks to **gvigroux** for keeping the hOn integration working, and to **Andre0512** for the original.
@@ -135,4 +166,4 @@ More free Home Assistant cards and guides at [mymediabuild.uk](https://mymediabu
 
 ## Licence
 
-MIT. Not affiliated with or endorsed by Haier, Candy or Hoover.
+MIT. Not affiliated with or endorsed by Haier, Candy, Hoover or Samsung.
