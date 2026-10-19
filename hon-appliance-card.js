@@ -1,17 +1,21 @@
-// hOn appliance cards for Home Assistant - washer + tumble dryer (Haier, Candy, Hoover) via the hOn integration.
+// hOn appliance cards for Home Assistant - washer + tumble dryer (Haier, Candy, Hoover) via the hOn integration,
+// and GE Appliances (GE, GE Profile, Café, Haier US) via the GE Home (SmartHQ) integration, github.com/simbaja/ha_gehome.
 // By My Media Build: https://mymediabuild.uk  (guide: https://mymediabuild.uk/home-assistant-washer-dryer-card/)
 // Free and open source, MIT licence. If it's useful, you can buy me a coffee: https://buymeacoffee.com/bobgreggr
 //
 //   type: custom:hon-appliance-card       the machine, with a progress ring round the door, the time on its display,
 //   appliance: washer                     the programme, temperature/spin or dry level and the end time. Pause, Resume,
 //                                         Standby and Off buttons appear when Remote Control is on.
-//   type: custom:hon-programmes-card      favourite programmes as buttons; tap one, confirm, and it starts.
+//                                         GE: a Start button (for the cycle chosen on the machine) appears when Remote Enable is on.
+//   type: custom:hon-programmes-card      favourite programmes as buttons; tap one, confirm, and it starts. hOn only.
 //   appliance: dryer
 //
 // Options (both cards):
 //   appliance: washer | dryer             required
 //   entity: washing_machine               the start of your entity IDs (binary_sensor.<entity>_status, sensor.<entity>_mode, ...)
-//                                         defaults: washing_machine for the washer, tumble_dryer for the dryer
+//                                         defaults: washing_machine for the washer, tumble_dryer for the dryer.
+//                                         GE: the serial number or MAC address (sensor.<id>_laundry_machine_state); found by itself if left out
+//   integration: hon | ge                 optional, worked out from your entities
 //   name: Washer                          card title
 //   colour: "#4fb3ff"                     accent colour
 //   names:                                your own programme names, by programme key or by the name the card shows, e.g.
@@ -25,7 +29,7 @@
 //                        programmes: [...]                    optional full list for the "All programmes" search
 
 
-const HON_CARD_VERSION = "2.0.1";
+const HON_CARD_VERSION = "2.1.1";
 
 // Built-in pictures (illustrations drawn for this card), so it's a single file that installs through HACS.
 const HON_IMG = {
@@ -98,11 +102,47 @@ const DEFAULTS = {
 // binary_sensor.*_status is the POWER state: "on" also covers "switched on, programme picked, not started".
 // Only these machMode values mean a cycle is under way: 2 Running, 3 Paused, 4/5 Scheduled, 9 Ending.
 const RUNNING_MODES = ["2", "3", "4", "5", "9"];
+
+// GE Home (SmartHQ): sensor.<id>_laundry_machine_state is the machine state (Off, Standby, Run, Paused, Delay Run, Finished, ...),
+// _laundry_sub_cycle the phase, _laundry_cycle the programme. There's no pause or stop, only button.<id>_start_cycle, which starts
+// the cycle chosen on the machine once Remote Enable is on. States not listed here are shown as they are.
+const GE = {
+  mode: { Standby: "Ready", Run: "Running", "Delay Run": "Scheduled", "Delay Paused": "Paused", "Drain Timeout": "Drain timeout" },
+  phase: { Fill: "Filling", Soak: "Soaking", Wash: "Washing", Drain: "Draining", "Extra Spin": "Spin", "Extra Rinse": "Rinse", Tumble: "Tumbling",
+           "Extended Tumble": "Tumbling", "Load Size Detection": "Weighing", "Mist Steam": "Steam", "Cool Down": "Cooldown" },
+};
+const GE_RUNNING = ["Run", "Paused", "Delay Run", "Delay Paused"];
+const GE_CYCLE = ["Run", "Paused"];                     // the cycle itself, after any delayed start
+const geState = p => `sensor.${p}_laundry_machine_state`;
+// the entity that shows the machine is there: hOn's power sensor or GE's machine state
+const statusId = m => m.ge ? geState(m.entity) : `binary_sensor.${m.entity}_status`;
+// a duration sensor in seconds, whatever unit it's shown in (GE's time remaining is minutes unless you change it)
+const secs = s => s ? parseFloat(s.state) * ({ s: 1, min: 60, h: 3600, d: 86400 }[s.attributes.unit_of_measurement] ?? 60) : NaN;
+
+// Which machine: { ge, entity }. Kept while its entity is there; otherwise looked for again (e.g. its integration was still loading).
+// GE entity IDs start with the serial number, or the MAC address (aa_bb_cc_dd_ee_ff) if GE Home's device identifier option
+// says so, so with no entity option the card looks for a GE machine with washer (sensor.<id>_laundry_washer_...)
+// or dryer (..._laundry_dryer_...) entities.
+function locate(c, h, last) {
+  if (last && h.states[statusId(last)]) return last;
+  const own = c.entity || DEFAULTS[c.appliance].entity;
+  const ge = c.integration ? c.integration === "ge" : !!h.states[geState(own)];
+  if (c.entity || c.integration === "hon" || h.states[statusId({ ge, entity: own })]) return { ge, entity: own };
+  const ids = Object.keys(h.states);
+  const p = ids.map(id => /^sensor\.(.+)_laundry_machine_state$/.exec(id)?.[1])
+    .find(p => p && ids.some(id => id.includes(`.${p}_laundry_${c.appliance}_`)));
+  return p ? { ge: true, entity: p } : { ge, entity: own };
+}
+
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 function setup(c) {
   if (!DEFAULTS[c.appliance]) throw new Error("appliance must be washer or dryer");
+  if (c.integration && !["hon", "ge"].includes(c.integration)) throw new Error("integration must be hon or ge");
   const d = DEFAULTS[c.appliance];
-  return { ...c, entity: c.entity || d.entity, title: c.name || d.title, colour: c.colour || d.colour,
+  const title = c.name || d.title;
+  // the name inside a sentence ("Start Cotton on the washer?"), keeping all-capitals words like GE
+  const inText = title.split(" ").map(w => w.length > 1 && w === w.toUpperCase() ? w : w.toLowerCase()).join(" ");
+  return { ...c, title, inText, colour: c.colour || d.colour,
     style: c.style === "drawn" ? "drawn" : "photo", images: c.images ? c.images.replace(/\/?$/, "/") : "",
     finish: FINISH_NAMES[String(c.finish || "").toLowerCase()] || "white",
     names: c.names && typeof c.names === "object" ? Object.fromEntries(Object.entries(c.names).map(([k, v]) => [String(k), String(v)])) : {} };
@@ -194,6 +234,7 @@ ha-card { display:block; background:var(--hon-card-bg,#2a2a2a); border:1px solid
 .ask { display:flex; align-items:center; gap:8px; margin:-2px 0 10px; padding:8px 10px; border-radius:12px; background:#1f1f1f; border:1px solid #ff6b6b66; }
 .ask span { flex:1; font-size:13.5px; }
 .ask .go { background:#e5484d; color:#fff; }
+.ask.ok { border-color:var(--c); } .ask.ok .go { background:var(--c); color:#000; }
 .err { font-size:12.5px; color:#ff8a8a; margin:-4px 0 8px; }
 .err:empty { display:none; }
 @keyframes spin { to { transform:rotate(360deg); } }
@@ -207,7 +248,7 @@ const hhmm = d => d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" 
 
 class HonApplianceCard extends HTMLElement {
   setConfig(c) {
-    this._config = setup(c);
+    this._config = setup(c); this._m = null;
     // rebuild when the config changes later too (the dashboard editor's preview), e.g. a new finish or images
     if (this.isConnected && (!this.shadowRoot || this._hass)) { this._build(); this._render(); }
   }
@@ -230,6 +271,7 @@ class HonApplianceCard extends HTMLElement {
         <button id="resume"><ha-icon icon="mdi:play"></ha-icon>Resume</button>
         <button id="standby"><ha-icon icon="mdi:stop"></ha-icon>Standby</button>
         <button id="off"><ha-icon icon="mdi:power"></ha-icon>Off</button>
+        <button id="start"><ha-icon icon="mdi:play-circle"></ha-icon>Start</button>
       </div>
       <div class="ask" id="ask" hidden><span id="askT"></span><button id="askNo">Cancel</button><button class="go" id="askYes">Yes</button></div>
       <div class="err" id="err"></div>
@@ -251,37 +293,46 @@ class HonApplianceCard extends HTMLElement {
       </div>
     </ha-card>`;
     // hOn controls: set_mode 3 = pause, 2 = resume, 1 = standby (cycle cancelled, machine stays on); turn_off = power off.
+    // GE: Start presses the integration's Start Cycle button.
     r.getElementById("pause").addEventListener("click", () => this._send("set_mode", { mode: "3" }));
     r.getElementById("resume").addEventListener("click", () => this._send("set_mode", { mode: "2" }));
     r.getElementById("standby").addEventListener("click", () => this._ask("standby"));
     r.getElementById("off").addEventListener("click", () => this._ask("off"));
+    r.getElementById("start").addEventListener("click", () => this._ask("start"));
     r.getElementById("askNo").addEventListener("click", () => this._ask(null));
     r.getElementById("askYes").addEventListener("click", () => {
       const what = this._asking; this._ask(null);
       if (what === "standby") this._send("set_mode", { mode: "1" });
       if (what === "off") this._send("turn_off", {});
+      if (what === "start") this._call("button", "press", { entity_id: `button.${this._m.entity}_start_cycle` });
     });
-    r.getElementById("pic").addEventListener("click", () => this.dispatchEvent(new CustomEvent("hass-more-info",
-      { detail: { entityId: `binary_sensor.${c.entity}_status` }, bubbles: true, composed: true })));
+    r.getElementById("pic").addEventListener("click", () => this._m && this.dispatchEvent(new CustomEvent("hass-more-info",
+      { detail: { entityId: statusId(this._m) }, bubbles: true, composed: true })));
   }
 
   _ask(what) {
-    const r = this.shadowRoot, name = this._config.title.toLowerCase(); this._asking = what;
+    const r = this.shadowRoot, name = this._config.inText, prog = this._prog; this._asking = what;
     r.getElementById("ask").hidden = !what;
+    r.getElementById("ask").classList.toggle("ok", what === "start");
+    r.getElementById("askYes").textContent = what === "start" ? "Start" : "Yes";
     if (what) r.getElementById("askT").textContent = what === "off"
       ? `Turn the ${name} off?${this._t?.on ? " This stops the current cycle." : ""}`
+      : what === "start" ? (prog && prog !== "—" ? `Start ${prog} on the ${name}?` : `Start the ${name}?`)
       : `Put the ${name} in standby? This cancels the current cycle.`;
   }
   async _send(service, data) {
-    const r = this.shadowRoot, dev = this._hass?.entities?.[`binary_sensor.${this._config.entity}_status`]?.device_id;
-    r.getElementById("err").textContent = "";
-    if (!dev) { r.getElementById("err").textContent = "Couldn't find this machine's device in Home Assistant. Check the entity option."; return; }
-    try { await this._hass.callService("hon", service, { device: dev, ...data }); }
-    catch (e) { r.getElementById("err").textContent = `Couldn't send that: ${e.message || e}`; }
+    const dev = this._hass?.entities?.[`binary_sensor.${this._m?.entity}_status`]?.device_id;
+    if (!dev) { this.shadowRoot.getElementById("err").textContent = "Couldn't find this machine's device in Home Assistant. Check the entity option."; return; }
+    this._call("hon", service, { device: dev, ...data });
+  }
+  async _call(domain, service, data) {
+    const err = this.shadowRoot.getElementById("err"); err.textContent = "";
+    try { await this._hass.callService(domain, service, data); }
+    catch (e) { err.textContent = `Couldn't send that: ${e.message || e}`; }
   }
 
-  _st(id) { const s = this._hass?.states[id]; return s && !["unknown", "unavailable", ""].includes(s.state) ? s : null; }
-  _val(k) { return this._st(`sensor.${this._config.entity}_${k}`)?.state ?? null; }
+  _st(id) { const s = this._hass?.states[id]; return s && !["unknown", "unavailable", "", "---"].includes(s.state) ? s : null; }
+  _val(k) { return this._st(`sensor.${this._m.entity}_${k}`)?.state ?? null; }
   _name(kind, v) { return v == null ? null : HON[this._config.appliance]?.[kind]?.[v] ?? null; }
 
   // hOn often reports "No program" (or the last run's name) for cycles started on the dial.
@@ -289,32 +340,21 @@ class HonApplianceCard extends HTMLElement {
   _programme(powered) {
     const code = this._val("program_code"), prog = this._val("program_name");
     try {
-      const mine = JSON.parse(localStorage.getItem(`hon-started-${this._config.entity}`) || "null");
+      const mine = JSON.parse(localStorage.getItem(`hon-started-${this._m.entity}`) || "null");
       if (mine && powered && Date.now() - mine.at < 6 * 3600e3) return label(mine.k, this._config.names);
     } catch (e) {}
     if (prog && !["No program", "home_assistant"].includes(prog)) return label(prog, this._config.names);
     return code != null && code !== "0" ? `Programme #${code}` : "—";
   }
 
-  _render() {
-    const r = this.shadowRoot, h = this._hass; if (!r || !h) return;
-    const c = this._config, dev = c.entity, washer = c.appliance === "washer";
-    const status = this._st(`binary_sensor.${dev}_status`);
+  // hOn: binary_sensor.<entity>_status is the power, sensor.<entity>_mode the machine state (machMode), _program_phase the phase
+  _hon(dryer) {
+    const dev = this._m.entity, status = this._st(`binary_sensor.${dev}_status`);
     const powered = status?.state === "on";
     const mode = this._val("mode"), phaseCode = this._val("program_phase");
     const on = powered && RUNNING_MODES.includes(mode);
-    const done = !on && mode === "7";
-    const cool = on && !washer && phaseCode === "3";
+    const done = !on && mode === "7", paused = on && mode === "3";
     const phase = this._name("phase", phaseCode) || (phaseCode != null ? `Phase ${phaseCode}` : "");
-    const card = r.querySelector("ha-card");
-    card.classList.toggle("on", on); card.classList.toggle("off", !on && !done);
-    card.classList.toggle("fin", done); card.classList.toggle("cool", cool);
-
-    const pill = r.getElementById("pill");
-    pill.className = "pill" + (cool ? " cool" : on ? " run" : done ? " done" : "");
-    pill.textContent = on ? (phaseCode && phaseCode !== "0" ? phase : this._name("mode", mode) || "Running")
-      : powered ? this._name("mode", mode) || "On" : done ? "Finished" : "Off";
-    r.getElementById("phase").textContent = done ? "Finished" : phase;
 
     // timing: hOn gives start/end timestamps while running; remaining_time (whole minutes) is the fallback
     const rem = this._st(`sensor.${dev}_remaining_time`);
@@ -325,43 +365,118 @@ class HonApplianceCard extends HTMLElement {
       if (this._remKey !== key) { this._remKey = key; this._remEnd = Date.now() + parseFloat(rem.state) * 60000; }
       end = this._remEnd;
     }
-    this._t = { on, done, start, end, ready: powered && !on && !done };
 
-    const wifi = this._st(`binary_sensor.${dev}_remote_control`)?.state === "on";
-    const paused = on && mode === "3";
-    r.getElementById("ctl").hidden = !powered || !wifi;   // the machine ignores remote commands unless Remote Control is on
-    r.getElementById("pause").hidden = !on || paused;
-    r.getElementById("resume").hidden = !paused;
-    r.getElementById("standby").hidden = !on;
-    if (!powered) this._ask(null);
-    r.getElementById("wifi").classList.toggle("lit", wifi);
-    const door = r.getElementById("door"), doorSensor = this._st(`binary_sensor.${dev}_door_status`);
-    if (!doorSensor) {
-      // no door sensor (most washers): the door is locked while a cycle is under way
-      door.querySelector("ha-icon").setAttribute("icon", on ? "mdi:lock" : "mdi:lock-open-variant");
-      door.classList.toggle("lit", on); door.title = on ? "Door locked (cycle running)" : "Door unlocked";
-    } else {
-      const open = doorSensor.state === "on";
-      door.querySelector("ha-icon").setAttribute("icon", open ? "mdi:door-open" : on ? "mdi:lock" : "mdi:door-closed");
-      door.classList.toggle("lit", on && !open); door.title = open ? "Door open" : "Door closed";
-    }
-
-    const rows = [["Programme", this._programme(powered)]];
-    if (washer) {
+    let setting;
+    if (!dryer) {
       const t = this._val("temperature"), s = this._val("spin_speed");
-      rows.push(["Temp · Spin", `${t != null ? t + " °C" : "—"} · ${s != null && s !== "0" ? s + " rpm" : "—"}`]);
+      setting = ["Temp · Spin", `${t != null ? t + " °C" : "—"} · ${s != null && s !== "0" ? s + " rpm" : "—"}`];
     } else {
       const dl = this._val("dry_level");
-      rows.push(["Dry level", this._name("dry_level", dl) || (dl != null ? `Level ${dl}` : "—")]);
+      setting = ["Dry level", this._name("dry_level", dl) || (dl != null ? `Level ${dl}` : "—")];
     }
-    rows.push([on ? "Ends" : "Cycles", on ? (isNaN(end) ? "—" : hhmm(new Date(end))) : this._val("total_programs") ?? "—"]);
+    return { powered, on, done, ready: powered && !on && !done, cool: on && dryer && phaseCode === "3", phase, start, end,
+      mode: this._name("mode", mode), busy: phaseCode && phaseCode !== "0" ? phase : this._name("mode", mode) || "Running",
+      wifi: this._st(`binary_sensor.${dev}_remote_control`)?.state === "on",
+      can: { pause: on && !paused, resume: paused, standby: on, off: true },
+      door: this._st(`binary_sensor.${dev}_door_status`), locked: on,
+      programme: this._programme(powered), setting, idle: ["Cycles", this._val("total_programs") ?? "—"] };
+  }
+
+  // GE: the machine state, the phase (sub-cycle) and the time remaining; no start or end time (see _cycleStart)
+  _ge(dryer) {
+    const dev = this._m.entity, ms = this._st(geState(dev)), mode = ms?.state, sub = this._val("laundry_sub_cycle");
+    const powered = !!mode && mode !== "Off", on = GE_RUNNING.includes(mode), done = mode === "Finished";
+    // only Standby is ready to start: Drain Timeout, Commissioning, Bulk Flush and Clean Speak aren't
+    const paused = on && mode.endsWith("Paused"), delayed = on && mode.startsWith("Delay"), ready = mode === "Standby";
+    const phase = sub && !delayed ? GE.phase[sub] || sub : "";
+
+    // timing: the time remaining (plus the wait, for a delayed start) counts down while it runs. It's held still
+    // while paused (from the moment it paused) and before it starts, when it's the chosen cycle's length.
+    const rem = this._st(`sensor.${dev}_laundry_time_remaining`);
+    const left = secs(rem) + (delayed ? secs(this._st(`sensor.${dev}_laundry_delay_time_remaining`)) || 0 : 0);
+    let at = NaN, end = NaN;
+    if ((paused || ready) && left > 0) { at = paused ? Date.parse(ms.last_changed) : Date.now(); end = at + left * 1000; }
+    else if (on && left >= 0) {
+      const key = rem.last_updated + rem.state + left + ms.last_changed;   // a resume restarts the count even if the time left hasn't moved
+      if (this._remKey !== key) { this._remKey = key; this._remEnd = Date.now() + left * 1000; }
+      end = this._remEnd;
+    }
+    if (!on || delayed) this._cyc = null;
+
+    const v = (...keys) => keys.map(k => this._val(k)).find(x => x != null) ?? "—";
+    const btn = this._hass.states[`button.${dev}_start_cycle`], lock = this._st(`binary_sensor.${dev}_laundry_washer_door_lock`);
+    // names: the user's own, keyed by the cycle as GE Home reports it ("Normal Or Mixed Load") or as the card shows it
+    const cycle = v("laundry_cycle"), shown = cycle.replace(/ Or /g, " / "), names = this._config.names;
+    return { powered, on, done, ready, cool: on && dryer && sub === "Cool Down", phase, at, end,
+      start: on && !delayed ? this._cycleStart(ms) : NaN, ends: paused ? Date.now() + left * 1000 : end,
+      mode: GE.mode[mode] || mode, busy: paused ? "Paused" : phase || GE.mode[mode] || mode,
+      wifi: this._st(`binary_sensor.${dev}_laundry_remote_status`)?.state === "on",
+      can: { start: ready && !!btn && btn.state !== "unavailable" },
+      door: this._st(`binary_sensor.${dev}_laundry_door`), locked: lock ? lock.state === "on" : on,
+      programme: names[cycle] ?? names[shown] ?? shown,
+      setting: dryer
+        ? ["Heat · Dryness", `${v("laundry_dryer_temperaturenew_option", "laundry_dryer_temperature_option")} · ${v("laundry_dryer_drynessnew_level", "laundry_dryer_dryness_level")}`]
+        : ["Temp · Spin", `${v("laundry_washer_washtemp_level")} · ${v("laundry_washer_spintime_level")}`] };
+  }
+
+  // GE has no start time, and the machine state's last change is the latest resume after a pause. So the start is taken when the
+  // card first sees the cycle, and the history is asked once when the machine went into Run from anything but Run/Paused
+  // (it may not have the newest change yet, for a cycle that has just started; then the first sighting stands).
+  _cycleStart(ms) {
+    if (!this._cyc) {
+      const c = this._cyc = { at: Date.parse(ms.last_changed) };
+      this._hass.callWS({ type: "history/history_during_period", start_time: new Date(Date.now() - 12 * 3600e3).toISOString(),
+        entity_ids: [ms.entity_id], minimal_response: true, no_attributes: true })
+        .then(res => {
+          const h = res?.[ms.entity_id] || []; let i = h.length;
+          while (i > 0 && GE_CYCLE.includes(h[i - 1].s)) i--;
+          if (i < h.length) { c.at = (h[i].lc ?? h[i].lu) * 1000; this._render(); }
+        }).catch(() => {});
+    }
+    return this._cyc.at;
+  }
+
+  _render() {
+    const r = this.shadowRoot, h = this._hass; if (!r || !h) return;
+    const dryer = this._config.appliance === "dryer";
+    this._m = locate(this._config, h, this._m);
+    const s = this._m.ge ? this._ge(dryer) : this._hon(dryer), { powered, on, done, cool, can } = s;
+    const card = r.querySelector("ha-card");
+    card.classList.toggle("on", on); card.classList.toggle("off", !on && !done);
+    card.classList.toggle("fin", done); card.classList.toggle("cool", cool);
+
+    const pill = r.getElementById("pill");
+    pill.className = "pill" + (cool ? " cool" : on ? " run" : done ? " done" : "");
+    pill.textContent = on ? s.busy : powered ? s.mode || "On" : done ? "Finished" : "Off";
+    r.getElementById("phase").textContent = done ? "Finished" : s.phase;
+    this._t = { on, done, start: s.start, end: s.end, at: s.at, ready: s.ready };
+
+    // the machine ignores remote commands unless Remote Control (GE: Remote Enable) is on
+    r.getElementById("ctl").hidden = !powered || !s.wifi || !Object.values(can).some(Boolean);
+    for (const b of ["pause", "resume", "standby", "off", "start"]) r.getElementById(b).hidden = !can[b];
+    if (!powered || this._asking && !can[this._asking]) this._ask(null);
+    r.getElementById("wifi").classList.toggle("lit", s.wifi);
+    const door = r.getElementById("door"), doorSensor = s.door, locked = s.locked;
+    if (!doorSensor) {
+      // no door sensor (most washers): the door is locked while a cycle is under way
+      door.querySelector("ha-icon").setAttribute("icon", locked ? "mdi:lock" : "mdi:lock-open-variant");
+      door.classList.toggle("lit", locked); door.title = locked ? "Door locked (cycle running)" : "Door unlocked";
+    } else {
+      const open = doorSensor.state === "on";
+      door.querySelector("ha-icon").setAttribute("icon", open ? "mdi:door-open" : locked ? "mdi:lock" : "mdi:door-closed");
+      door.classList.toggle("lit", locked && !open); door.title = open ? "Door open" : "Door closed";
+    }
+
+    this._prog = s.programme;
+    const ends = s.ends ?? s.end;
+    const rows = [["Programme", s.programme], s.setting, on ? ["Ends", isNaN(ends) ? "—" : hhmm(new Date(ends))] : s.idle].filter(Boolean);
     r.getElementById("rows").innerHTML = rows.map(([k, x]) => `<div class="row"><span>${k}</span><span>${esc(x)}</span></div>`).join("");
     this._time();
   }
 
   _time() {
     const r = this.shadowRoot, t = this._t; if (!r || !t) return;
-    const now = Date.now(), left = isNaN(t.end) ? NaN : (t.end - now) / 1000;
+    const now = t.at || Date.now(), left = isNaN(t.end) ? NaN : (t.end - now) / 1000;   // at: held still (GE, paused or not started)
     let pct = 0;
     if (t.done) pct = 100;
     else if (t.on && !isNaN(t.start) && !isNaN(t.end) && t.end > t.start) pct = Math.min(100, Math.max(0, (now - t.start) / (t.end - t.start) * 100));
@@ -376,10 +491,11 @@ class HonApplianceCard extends HTMLElement {
 if (!customElements.get("hon-appliance-card")) customElements.define("hon-appliance-card", HonApplianceCard);
 window.customCards = window.customCards || [];
 if (!window.customCards.some(c => c.type === "hon-appliance-card"))
-  window.customCards.push({ type: "hon-appliance-card", name: "hOn appliance", description: "Washer/dryer with a progress ring round the door" });
+  window.customCards.push({ type: "hon-appliance-card", name: "hOn appliance", description: "Washer/dryer (hOn or GE Home) with a progress ring round the door" });
 
 // Programme picker: favourites as buttons, an optional full list behind "All programmes", confirm before starting.
 // Starts via hon.start_program with the programme's default settings. The machine only accepts it with Remote Control on.
+// GE Home can't be sent a programme, so for a GE machine the card says so instead.
 const PCSS = `
 ha-card { display:block; background:var(--hon-card-bg,#2a2a2a); border:1px solid #ffffff0f; border-radius:16px; box-shadow:none; padding:12px 14px 14px;
   color:#ececec; font-family:var(--hon-font,system-ui,-apple-system,"Segoe UI",sans-serif); }
@@ -389,6 +505,7 @@ ha-card { display:block; background:var(--hon-card-bg,#2a2a2a); border:1px solid
 .note { font-size:12.5px; color:#ffb44f; background:#4a341733; border:1px solid #ffb44f33; border-radius:10px; padding:6px 10px; margin-bottom:10px; }
 .note[hidden] { display:none; }
 .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(118px,1fr)); gap:8px; }
+.grid[hidden] { display:none; }
 .prog { min-height:46px; padding:6px 8px; border-radius:12px; border:1px solid #ffffff10; background:var(--hon-btn-bg,#333); color:#ececec;
   font:500 13.5px inherit; font-family:inherit; text-align:center; cursor:pointer; -webkit-tap-highlight-color:transparent; touch-action:manipulation; }
 .prog:active, .prog.sel { background:color-mix(in srgb, var(--c) 30%, #333); border-color:var(--c); }
@@ -406,7 +523,7 @@ ha-card { display:block; background:var(--hon-card-bg,#2a2a2a); border:1px solid
 `;
 class HonProgrammesCard extends HTMLElement {
   setConfig(c) {
-    this._config = setup(c);
+    this._config = setup(c); this._m = null;
     if (this.isConnected && !this.shadowRoot) this._build();
   }
   getCardSize() { return 6; }
@@ -449,26 +566,34 @@ class HonProgrammesCard extends HTMLElement {
     this._sel = k;
     r.querySelectorAll(".prog").forEach(b => b.classList.toggle("sel", b.dataset.k === k));
     r.getElementById("confirm").hidden = !k;
-    if (k) r.getElementById("ask").textContent = `Start ${label(k, this._config.names)} on the ${this._config.title.toLowerCase()}?`;
+    if (k) r.getElementById("ask").textContent = `Start ${label(k, this._config.names)} on the ${this._config.inText}?`;
   }
   async _start() {
-    const k = this._sel, c = this._config, dev = this._hass?.entities?.[`binary_sensor.${c.entity}_status`]?.device_id;
+    const k = this._sel, ent = this._m?.entity, dev = this._hass?.entities?.[`binary_sensor.${ent}_status`]?.device_id;
     this._pick(null);
     if (!k) return;
     const n = this.shadowRoot.getElementById("note");
     if (!dev) { n.hidden = false; n.textContent = "Couldn't find this machine's device in Home Assistant. Check the entity option."; this._err = true; return; }
     try {
       await this._hass.callService("hon", "start_program", { program: k }, { device_id: dev });
-      try { localStorage.setItem(`hon-started-${c.entity}`, JSON.stringify({ k, at: Date.now() })); } catch (e) {}
+      try { localStorage.setItem(`hon-started-${ent}`, JSON.stringify({ k, at: Date.now() })); } catch (e) {}
     } catch (e) { n.hidden = false; n.textContent = `Couldn't start: ${e.message || e}`; this._err = true; }
   }
   _render() {
     const r = this.shadowRoot, h = this._hass; if (!r || !h || !r.getElementById("note")) return;
-    const dev = this._config.entity, running = h.states[`binary_sensor.${dev}_status`]?.state === "on"
+    const m = this._m = locate(this._config, h, this._m), dev = m.entity;
+    const n = r.getElementById("note"), name = this._config.inText;
+    r.getElementById("favs").hidden = m.ge;
+    r.getElementById("more").hidden = m.ge || !(this._config.programmes || []).length;
+    if (m.ge) {
+      r.getElementById("all").hidden = r.getElementById("confirm").hidden = true; n.hidden = false;
+      n.textContent = `GE Home can't send a programme to the ${name}. Choose it on the machine and press Remote Enable, then use Start on the ${name} card.`;
+      return;
+    }
+    const running = h.states[`binary_sensor.${dev}_status`]?.state === "on"
       && RUNNING_MODES.includes(h.states[`sensor.${dev}_mode`]?.state);
     this._remote = h.states[`binary_sensor.${dev}_remote_control`]?.state === "on";
     this._running = running;
-    const n = r.getElementById("note"), name = this._config.title.toLowerCase();
     if (!this._err || running) {
       this._err = false;
       n.hidden = !running && this._remote;
@@ -480,5 +605,5 @@ class HonProgrammesCard extends HTMLElement {
 }
 if (!customElements.get("hon-programmes-card")) customElements.define("hon-programmes-card", HonProgrammesCard);
 if (!window.customCards.some(c => c.type === "hon-programmes-card"))
-  window.customCards.push({ type: "hon-programmes-card", name: "hOn programmes", description: "Start washer/dryer programmes" });
+  window.customCards.push({ type: "hon-programmes-card", name: "hOn programmes", description: "Start washer/dryer programmes (hOn)" });
 console.info(`%c HON-APPLIANCE-CARD %c v${HON_CARD_VERSION} `, "background:#4fb3ff;color:#000;font-weight:700", "background:#222;color:#fff");
