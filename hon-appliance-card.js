@@ -14,7 +14,7 @@
 //   appliance: washer | dryer             required
 //   entity: washing_machine               the start of your entity IDs (binary_sensor.<entity>_status, sensor.<entity>_mode, ...)
 //                                         defaults: washing_machine for the washer, tumble_dryer for the dryer.
-//                                         GE: the serial number (sensor.<serial>_laundry_machine_state); found by itself if left out
+//                                         GE: the serial number or MAC address (sensor.<id>_laundry_machine_state); found by itself if left out
 //   integration: hon | ge                 optional, worked out from your entities
 //   name: Washer                          card title
 //   colour: "#4fb3ff"                     accent colour
@@ -29,7 +29,7 @@
 //                        programmes: [...]                    optional full list for the "All programmes" search
 
 
-const HON_CARD_VERSION = "2.1.0";
+const HON_CARD_VERSION = "2.1.1";
 
 // Built-in pictures (illustrations drawn for this card), so it's a single file that installs through HACS.
 const HON_IMG = {
@@ -103,8 +103,8 @@ const DEFAULTS = {
 // Only these machMode values mean a cycle is under way: 2 Running, 3 Paused, 4/5 Scheduled, 9 Ending.
 const RUNNING_MODES = ["2", "3", "4", "5", "9"];
 
-// GE Home (SmartHQ): sensor.<serial>_laundry_machine_state is the machine state (Off, Standby, Run, Paused, Delay Run, Finished, ...),
-// _laundry_sub_cycle the phase, _laundry_cycle the programme. There's no pause or stop, only button.<serial>_start_cycle, which starts
+// GE Home (SmartHQ): sensor.<id>_laundry_machine_state is the machine state (Off, Standby, Run, Paused, Delay Run, Finished, ...),
+// _laundry_sub_cycle the phase, _laundry_cycle the programme. There's no pause or stop, only button.<id>_start_cycle, which starts
 // the cycle chosen on the machine once Remote Enable is on. States not listed here are shown as they are.
 const GE = {
   mode: { Standby: "Ready", Run: "Running", "Delay Run": "Scheduled", "Delay Paused": "Paused", "Drain Timeout": "Drain timeout" },
@@ -120,8 +120,9 @@ const statusId = m => m.ge ? geState(m.entity) : `binary_sensor.${m.entity}_stat
 const secs = s => s ? parseFloat(s.state) * ({ s: 1, min: 60, h: 3600, d: 86400 }[s.attributes.unit_of_measurement] ?? 60) : NaN;
 
 // Which machine: { ge, entity }. Kept while its entity is there; otherwise looked for again (e.g. its integration was still loading).
-// GE entity IDs start with the serial number, so with no entity option the card looks for a GE machine
-// with washer (sensor.<serial>_laundry_washer_...) or dryer (..._laundry_dryer_...) entities.
+// GE entity IDs start with the serial number, or the MAC address (aa_bb_cc_dd_ee_ff) if GE Home's device identifier option
+// says so, so with no entity option the card looks for a GE machine with washer (sensor.<id>_laundry_washer_...)
+// or dryer (..._laundry_dryer_...) entities.
 function locate(c, h, last) {
   if (last && h.states[statusId(last)]) return last;
   const own = c.entity || DEFAULTS[c.appliance].entity;
@@ -139,8 +140,9 @@ function setup(c) {
   if (c.integration && !["hon", "ge"].includes(c.integration)) throw new Error("integration must be hon or ge");
   const d = DEFAULTS[c.appliance];
   const title = c.name || d.title;
-  // the name inside a sentence ("Start Cotton on the washer?"), keeping capitals like GE
-  return { ...c, title, inText: title.replace(/\b[A-Z][a-z]+\b/g, w => w.toLowerCase()), colour: c.colour || d.colour,
+  // the name inside a sentence ("Start Cotton on the washer?"), keeping all-capitals words like GE
+  const inText = title.split(" ").map(w => w.length > 1 && w === w.toUpperCase() ? w : w.toLowerCase()).join(" ");
+  return { ...c, title, inText, colour: c.colour || d.colour,
     style: c.style === "drawn" ? "drawn" : "photo", images: c.images ? c.images.replace(/\/?$/, "/") : "",
     finish: FINISH_NAMES[String(c.finish || "").toLowerCase()] || "white",
     names: c.names && typeof c.names === "object" ? Object.fromEntries(Object.entries(c.names).map(([k, v]) => [String(k), String(v)])) : {} };
@@ -372,7 +374,7 @@ class HonApplianceCard extends HTMLElement {
       const dl = this._val("dry_level");
       setting = ["Dry level", this._name("dry_level", dl) || (dl != null ? `Level ${dl}` : "—")];
     }
-    return { powered, on, done, cool: on && dryer && phaseCode === "3", phase, start, end,
+    return { powered, on, done, ready: powered && !on && !done, cool: on && dryer && phaseCode === "3", phase, start, end,
       mode: this._name("mode", mode), busy: phaseCode && phaseCode !== "0" ? phase : this._name("mode", mode) || "Running",
       wifi: this._st(`binary_sensor.${dev}_remote_control`)?.state === "on",
       can: { pause: on && !paused, resume: paused, standby: on, off: true },
@@ -384,7 +386,8 @@ class HonApplianceCard extends HTMLElement {
   _ge(dryer) {
     const dev = this._m.entity, ms = this._st(geState(dev)), mode = ms?.state, sub = this._val("laundry_sub_cycle");
     const powered = !!mode && mode !== "Off", on = GE_RUNNING.includes(mode), done = mode === "Finished";
-    const paused = on && mode.endsWith("Paused"), delayed = on && mode.startsWith("Delay"), ready = powered && !on && !done;
+    // only Standby is ready to start: Drain Timeout, Commissioning, Bulk Flush and Clean Speak aren't
+    const paused = on && mode.endsWith("Paused"), delayed = on && mode.startsWith("Delay"), ready = mode === "Standby";
     const phase = sub && !delayed ? GE.phase[sub] || sub : "";
 
     // timing: the time remaining (plus the wait, for a delayed start) counts down while it runs. It's held still
@@ -402,13 +405,15 @@ class HonApplianceCard extends HTMLElement {
 
     const v = (...keys) => keys.map(k => this._val(k)).find(x => x != null) ?? "—";
     const btn = this._hass.states[`button.${dev}_start_cycle`], lock = this._st(`binary_sensor.${dev}_laundry_washer_door_lock`);
-    return { powered, on, done, cool: on && dryer && sub === "Cool Down", phase, at, end,
+    // names: the user's own, keyed by the cycle as GE Home reports it ("Normal Or Mixed Load") or as the card shows it
+    const cycle = v("laundry_cycle"), shown = cycle.replace(/ Or /g, " / "), names = this._config.names;
+    return { powered, on, done, ready, cool: on && dryer && sub === "Cool Down", phase, at, end,
       start: on && !delayed ? this._cycleStart(ms) : NaN, ends: paused ? Date.now() + left * 1000 : end,
       mode: GE.mode[mode] || mode, busy: paused ? "Paused" : phase || GE.mode[mode] || mode,
       wifi: this._st(`binary_sensor.${dev}_laundry_remote_status`)?.state === "on",
       can: { start: ready && !!btn && btn.state !== "unavailable" },
       door: this._st(`binary_sensor.${dev}_laundry_door`), locked: lock ? lock.state === "on" : on,
-      programme: v("laundry_cycle").replace(/ Or /g, " / "),
+      programme: names[cycle] ?? names[shown] ?? shown,
       setting: dryer
         ? ["Heat · Dryness", `${v("laundry_dryer_temperaturenew_option", "laundry_dryer_temperature_option")} · ${v("laundry_dryer_drynessnew_level", "laundry_dryer_dryness_level")}`]
         : ["Temp · Spin", `${v("laundry_washer_washtemp_level")} · ${v("laundry_washer_spintime_level")}`] };
@@ -444,7 +449,7 @@ class HonApplianceCard extends HTMLElement {
     pill.className = "pill" + (cool ? " cool" : on ? " run" : done ? " done" : "");
     pill.textContent = on ? s.busy : powered ? s.mode || "On" : done ? "Finished" : "Off";
     r.getElementById("phase").textContent = done ? "Finished" : s.phase;
-    this._t = { on, done, start: s.start, end: s.end, at: s.at, ready: powered && !on && !done };
+    this._t = { on, done, start: s.start, end: s.end, at: s.at, ready: s.ready };
 
     // the machine ignores remote commands unless Remote Control (GE: Remote Enable) is on
     r.getElementById("ctl").hidden = !powered || !s.wifi || !Object.values(can).some(Boolean);

@@ -35,7 +35,7 @@ For **hOn** machines (Haier, Candy, Hoover):
 For **GE Appliances** machines (GE, GE Profile, Café):
 
 - Your washer and/or dryer added to the **SmartHQ** app (formerly GE Appliances / Comfort) on your phone.
-- The **GE Home (SmartHQ)** custom integration, **[simbaja/ha_gehome](https://github.com/simbaja/ha_gehome)**. Install it from HACS, restart Home Assistant, then add **GE Home (SmartHQ)** under **Settings → Devices & services**.
+- The **GE Home (SmartHQ)** custom integration, **[simbaja/ha_gehome](https://github.com/simbaja/ha_gehome)**, version 2025.12 or newer. Install it from HACS, restart Home Assistant, then add **GE Home (SmartHQ)** under **Settings → Devices & services**.
 - **Remote Enable** pressed on the machine if you want to start it from Home Assistant. See [GE Appliances](#ge-appliances-ge-home--smarthq) for what the card can and can't do with GE.
 
 ## Install
@@ -50,7 +50,7 @@ For **GE Appliances** machines (GE, GE Profile, Café):
 
 1. Download `hon-appliance-card.js` from the [latest release](../../releases/latest).
 2. Copy it to `config/www/hon-appliance-card.js`.
-3. Go to **Settings → Dashboards → ⋮ → Resources**, add `/local/hon-appliance-card.js?v=2.1.0` as a **JavaScript module**, then reload your browser.
+3. Go to **Settings → Dashboards → ⋮ → Resources**, add `/local/hon-appliance-card.js?v=2.1.1` as a **JavaScript module**, then reload your browser.
 
 ## Use
 
@@ -102,7 +102,7 @@ cards:
     max_width: 380px
 ```
 
-GE entity IDs start with the machine's serial number, for example `sensor.zl123456g_laundry_machine_state`. If you have more than one GE washer or dryer, or the card picks the wrong one, find the machine-state sensor under **Settings → Entities** (search for `laundry_machine_state`) and set `entity` to the part before `_laundry_machine_state`:
+GE entity IDs start with the machine's serial number, for example `sensor.zl123456g_laundry_machine_state`, or with its MAC address, for example `sensor.aa_bb_cc_dd_ee_ff_laundry_machine_state`, depending on the **Device identifier** chosen in GE Home's **Configure** options. If you have more than one GE washer or dryer, or the card picks the wrong one, find the machine-state sensor under **Settings → Entities** (search for `laundry_machine_state`) and set `entity` to the part before `_laundry_machine_state`:
 
 ```yaml
 type: custom:hon-appliance-card
@@ -123,7 +123,7 @@ What's different with GE:
 | Option | Card | What it does |
 |---|---|---|
 | `appliance` | both | `washer` or `dryer` (required) |
-| `entity` | both | Start of your entity IDs. Default `washing_machine` / `tumble_dryer`. For GE, the serial number, found by itself if left out |
+| `entity` | both | Start of your entity IDs. Default `washing_machine` / `tumble_dryer`. For GE, the serial number or MAC address, found by itself if left out |
 | `integration` | both | `hon` or `ge`. Normally left out, as the card works it out from your entities |
 | `name` | both | Card title. Default Washer / Dryer |
 | `colour` | both | Accent colour, e.g. `"#4fb3ff"` |
@@ -180,6 +180,8 @@ names:
 ```
 
 Your names are used on the buttons, in the search, in the "Start …?" question, and on the Programme line of the appliance card. Add the same `names` to the appliance card if you want it there too.
+
+For a GE machine, add `names` to the appliance card and give each cycle as GE Home reports it, such as `Normal Or Mixed Load`, or as the card shows it, such as `Normal / Mixed Load`.
 
 ### Finding your programme keys (hOn)
 
