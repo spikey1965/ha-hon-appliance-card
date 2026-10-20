@@ -178,9 +178,18 @@ What's different from hOn:
 - **Stop** cancels the cycle (like Standby on hOn). **Off** appears if the machine has a power switch entity.
 - No programme name, dry level or cycle count, because the integration doesn't expose them.
 
+## Support and requests
+
+I build and look after this card in my spare time.
+
+- **Found a bug?** [Open an issue](../../issues/new/choose) and fill in the form. A screenshot and the entity list help a lot.
+- **Want another brand or integration?** Pull requests are very welcome. I can only test machines I own, so I can't promise to add new ones myself. Use the "Support for another machine" form so all the details are in one place.
+- **Other machines:** there are sister cards for [Candy Simply-Fi](https://github.com/spikey1965/ha-candy-appliance-card), [Miele](https://github.com/spikey1965/ha-miele-appliance-card) and [GE Appliances](https://github.com/spikey1965/ha-ge-appliance-card).
+- **Like the card?** A ⭐ on GitHub helps other people find it, and you can [buy me a coffee](https://buymeacoffee.com/bobgreggr) ☕. More free Home Assistant cards and guides at [mymediabuild.uk](https://mymediabuild.uk).
+
 ## Thanks
 
-Thanks to **gvigroux** for keeping the hOn integration working, and to **Andre0512** for the original.
+Thanks to **gvigroux** for keeping the hOn integration working, to **Andre0512** for the original, and to **[@nielsnl-nielsnl-nl](https://github.com/nielsnl-nielsnl-nl)** for the Samsung SmartThings support.
 
 More free Home Assistant cards and guides at [mymediabuild.uk](https://mymediabuild.uk), including a [step-by-step guide to this card](https://mymediabuild.uk/home-assistant-washer-dryer-card/) with a live demo. If you find it useful, you can [buy me a coffee](https://buymeacoffee.com/bobgreggr) ☕ (no pressure).
 
