@@ -19,6 +19,7 @@
 //                                         (smartthings: washer / dryer, i.e. sensor.<entity>_machine_state, select.<entity>, ...)
 //   name: Washer                          card title
 //   colour: "#4fb3ff"                     accent colour
+//   language: de                          en, de, fr, it, es, nl, pl or pt (default: Home Assistant's language, else English)
 //   names:                                your own programme names, by programme key or by the name the card shows, e.g.
 //     iot_wash_cotton: Baumwolle            (buttons, search, the "Start ...?" question and the Programme line)
 //     Mixed: Mischwäsche
@@ -30,7 +31,7 @@
 //                        programmes: [...]                    optional full list for the "All programmes" search
 
 
-const HON_CARD_VERSION = "2.1.1";
+const HON_CARD_VERSION = "2.2.0";
 
 // Built-in pictures (illustrations drawn for this card), so it's a single file that installs through HACS.
 const HON_IMG = {
@@ -87,10 +88,232 @@ const LABELS = { eco_40_60_new_energy_label: "Eco 40-60", eco: "Eco Cotton", all
   iot_wash_rapid_14: "Rapid 14'", iot_wash_rapid_30: "Rapid 30'", iot_wash_rapid_44: "Rapid 44'", iot_wash_rapid_59: "Rapid 59'",
   iot_dry_rapid_30: "Rapid 30'", iot_dry_rapid_59: "Rapid 59'", iot_dry_easy_iron_cotton: "Easy Iron", all_in_one: "All in One",
   auto_care: "Auto Care", relax_creases: "Relax Creases", iot_dry_denim_jeans: "Jeans" };
-const label = (k, names) => {
+const label = (k, names, lang) => {
   const auto = LABELS[k] || String(k).replace(/^iot_(wash|dry)_/, "").replace(/^iot_/, "").replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
-  // names: the user's own names, keyed by programme key or by the name the card would show
-  return names?.[k] ?? names?.[auto] ?? auto;
+  const p = I18N[lang]?.prog || {}, shown = p[auto] ?? auto.replace(/^Rapid\b/, m => p.Rapid ?? m);
+  // names: the user's own names, keyed by programme key or by the name the card would show (English or translated)
+  return names?.[k] ?? names?.[auto] ?? names?.[shown] ?? shown;
+};
+// Languages: picked from the card's  language:  option, else Home Assistant's language, else English.
+// Each entry translates the English words the card shows; anything missing stays English. Corrections welcome on GitHub.
+const I18N = {
+  en: {
+    off_btn: "Off",   // the power button (a verb; "Off" is the state)
+    ask_off: (n, run) => `Turn the ${n.toLowerCase()} off?${run ? " This stops the current cycle." : ""}`,
+    ask_stop: n => `Stop the ${n.toLowerCase()}? This cancels the current cycle.`,
+    ask_standby: n => `Put the ${n.toLowerCase()} in standby? This cancels the current cycle.`,
+    no_device: "Couldn't find this machine's device in Home Assistant. Check the entity option.",
+    send_err: m => `Couldn't send that: ${m}`, start_err: m => `Couldn't start: ${m}`,
+    prog_code: c => `Programme #${c}`, phase_n: n => `Phase ${n}`, level_n: n => `Level ${n}`,
+    progs_title: t => `${t} programmes`, search: n => `Search ${n} programmes`,
+    start_q: (p, n) => `Start ${p} on the ${n.toLowerCase()}?`,
+    st_note: n => `Picking programmes needs the hOn integration. With SmartThings, choose the programme on the machine,
+          switch on Remote Control, and press Start on the ${n.toLowerCase()} card.`,
+    running_note: n => `The ${n.toLowerCase()} is running. Pause it or put it in standby before starting another programme.`,
+    remote_off: n => `Remote Control is off on the ${n.toLowerCase()}. Switch it on at the machine to start programmes from here.`,
+  },
+  de: {
+    off_btn: "Aus",
+    Off: "Aus", On: "An", Start: "Start", Pause: "Pause", Resume: "Fortsetzen", Standby: "Standby", Stop: "Stopp", Cancel: "Abbrechen", Yes: "Ja",
+    Running: "Läuft", Paused: "Pausiert", Finished: "Fertig", Ready: "Bereit", Scheduled: "Geplant", Disconnected: "Getrennt", Error: "Fehler",
+    Ending: "Endet", Waiting: "Wartet", Drying: "Trocknen", Cooldown: "Abkühlen", Washing: "Waschen", Spin: "Schleudern", Rinse: "Spülen",
+    Steam: "Dampf", Weighing: "Wiegen", Tumbling: "Auflockern", Refresh: "Auffrischen", Heating: "Aufheizen", "Air wash": "Luftwäsche",
+    "Pre-wash": "Vorwäsche", "Anti-crease": "Knitterschutz", Sanitising: "Hygiene", "Self clean": "Selbstreinigung", "Freeze guard": "Frostschutz",
+    "Cupboard dry": "Schranktrocken", "Extra dry": "Extra trocken", "Ready to store": "Zum Einräumen", "Ready to iron": "Bügeltrocken",
+    "Remote control": "Fernsteuerung", "Door locked (cycle running)": "Tür verriegelt (Programm läuft)", "Door unlocked": "Tür entriegelt",
+    "Door open": "Tür offen", "Door closed": "Tür geschlossen",
+    Programme: "Programm", "Temp · Spin": "Temp. · Schleudern", "Dry level": "Trockengrad", Ends: "Endet", Cycles: "Zyklen", Status: "Status",
+    End: "Ende", Washer: "Waschmaschine", Dryer: "Trockner", "All programmes": "Alle Programme", "Favourites only": "Nur Favoriten",
+    ask_off: (n, run) => `${n} ausschalten?${run ? " Das laufende Programm wird beendet." : ""}`,
+    ask_stop: n => `${n} stoppen? Das laufende Programm wird abgebrochen.`,
+    ask_standby: n => `${n} in Standby schalten? Das laufende Programm wird abgebrochen.`,
+    no_device: "Das Gerät wurde in Home Assistant nicht gefunden. Prüfe die Option entity.",
+    send_err: m => `Senden fehlgeschlagen: ${m}`, start_err: m => `Start fehlgeschlagen: ${m}`,
+    prog_code: c => `Programm #${c}`, phase_n: n => `Phase ${n}`, level_n: n => `Stufe ${n}`,
+    progs_title: t => `${t} – Programme`, search: n => `${n} Programme durchsuchen`, start_q: (p, n) => `${n}: ${p} starten?`,
+    st_note: n => `Programme auswählen geht nur mit der hOn-Integration. Bei SmartThings das Programm am Gerät wählen, Fernsteuerung einschalten und auf der Karte „${n}“ Start drücken.`,
+    running_note: n => `${n} läuft. Erst pausieren oder in Standby schalten, dann ein anderes Programm starten.`,
+    remote_off: n => `${n}: Fernsteuerung ist aus. Am Gerät einschalten, um hier Programme zu starten.`,
+    prog: { Cotton: "Baumwolle", Mixed: "Mischwäsche", Synthetic: "Synthetik", Synthetics: "Synthetik", Delicate: "Feinwäsche", Delicates: "Feinwäsche",
+      Wool: "Wolle", "Bed Linen": "Bettwäsche", "Allergy Care": "Allergie", Rinse: "Spülen", "Drain + Spin": "Abpumpen + Schleudern",
+      "Eco Cotton": "Eco Baumwolle", "Easy Iron": "Bügelleicht", Duvet: "Bettdecke", "All in One": "All in One", "Relax Creases": "Knitterarm",
+      Jeans: "Jeans", Rapid: "Schnell" },
+  },
+  fr: {
+    off_btn: "Éteindre",
+    Off: "Éteint", On: "Allumé", Start: "Démarrer", Pause: "Pause", Resume: "Reprendre", Standby: "Veille", Stop: "Arrêter", Cancel: "Annuler", Yes: "Oui",
+    Running: "En cours", Paused: "En pause", Finished: "Terminé", Ready: "Prêt", Scheduled: "Différé", Disconnected: "Déconnecté", Error: "Erreur",
+    Ending: "Fin de cycle", Waiting: "En attente", Drying: "Séchage", Cooldown: "Refroidissement", Washing: "Lavage", Spin: "Essorage", Rinse: "Rinçage",
+    Steam: "Vapeur", Weighing: "Pesée", Tumbling: "Brassage", Refresh: "Rafraîchir", Heating: "Chauffe", "Air wash": "Lavage à l'air",
+    "Pre-wash": "Prélavage", "Anti-crease": "Anti-froissage", Sanitising: "Hygiène", "Self clean": "Auto-nettoyage", "Freeze guard": "Antigel",
+    "Cupboard dry": "Sec armoire", "Extra dry": "Extra sec", "Ready to store": "Prêt à ranger", "Ready to iron": "Prêt à repasser",
+    "Remote control": "Commande à distance", "Door locked (cycle running)": "Porte verrouillée (cycle en cours)", "Door unlocked": "Porte déverrouillée",
+    "Door open": "Porte ouverte", "Door closed": "Porte fermée",
+    Programme: "Programme", "Temp · Spin": "Temp. · Essorage", "Dry level": "Niveau de séchage", Ends: "Fin", Cycles: "Cycles", Status: "État",
+    End: "Fin", Washer: "Lave-linge", Dryer: "Sèche-linge", "All programmes": "Tous les programmes", "Favourites only": "Favoris seulement",
+    ask_off: (n, run) => `${n} : éteindre ?${run ? " Le cycle en cours sera arrêté." : ""}`,
+    ask_stop: n => `${n} : arrêter ? Le cycle en cours sera annulé.`,
+    ask_standby: n => `${n} : mettre en veille ? Le cycle en cours sera annulé.`,
+    no_device: "Appareil introuvable dans Home Assistant. Vérifiez l'option entity.",
+    send_err: m => `Envoi impossible : ${m}`, start_err: m => `Démarrage impossible : ${m}`,
+    prog_code: c => `Programme n°${c}`, phase_n: n => `Phase ${n}`, level_n: n => `Niveau ${n}`,
+    progs_title: t => `${t} – programmes`, search: n => `Rechercher parmi ${n} programmes`, start_q: (p, n) => `${n} : démarrer ${p} ?`,
+    st_note: n => `Le choix des programmes nécessite l'intégration hOn. Avec SmartThings, choisissez le programme sur la machine, activez la commande à distance puis appuyez sur Démarrer sur la carte ${n}.`,
+    running_note: n => `${n} : cycle en cours. Mettez en pause ou en veille avant de lancer un autre programme.`,
+    remote_off: n => `${n} : la commande à distance est désactivée. Activez-la sur la machine pour lancer des programmes d'ici.`,
+    prog: { Cotton: "Coton", Mixed: "Mixte", Synthetic: "Synthétiques", Synthetics: "Synthétiques", Delicate: "Délicat", Delicates: "Délicat",
+      Wool: "Laine", "Bed Linen": "Draps", "Allergy Care": "Anti-allergie", Rinse: "Rinçage", "Drain + Spin": "Vidange + Essorage",
+      "Eco Cotton": "Coton Éco", "Easy Iron": "Repassage facile", Duvet: "Couette", "All in One": "Tout en un", "Relax Creases": "Anti-plis",
+      Jeans: "Jeans", Rapid: "Rapide" },
+  },
+  it: {
+    off_btn: "Spegni",
+    Off: "Spenta", On: "Accesa", Start: "Avvia", Pause: "Pausa", Resume: "Riprendi", Standby: "Standby", Stop: "Ferma", Cancel: "Annulla", Yes: "Sì",
+    Running: "In funzione", Paused: "In pausa", Finished: "Terminato", Ready: "Pronta", Scheduled: "Programmata", Disconnected: "Disconnessa",
+    Error: "Errore", Ending: "In chiusura", Waiting: "In attesa", Drying: "Asciugatura", Cooldown: "Raffreddamento", Washing: "Lavaggio",
+    Spin: "Centrifuga", Rinse: "Risciacquo", Steam: "Vapore", Weighing: "Pesatura", Tumbling: "Rotazione", Refresh: "Rinfresca",
+    Heating: "Riscaldamento", "Air wash": "Lavaggio ad aria", "Pre-wash": "Prelavaggio", "Anti-crease": "Antipiega", Sanitising: "Igienizzazione",
+    "Self clean": "Autopulizia", "Freeze guard": "Antigelo", "Cupboard dry": "Asciutto armadio", "Extra dry": "Extra asciutto",
+    "Ready to store": "Pronto da riporre", "Ready to iron": "Pronto stiro",
+    "Remote control": "Controllo remoto", "Door locked (cycle running)": "Oblò bloccato (ciclo in corso)", "Door unlocked": "Oblò sbloccato",
+    "Door open": "Oblò aperto", "Door closed": "Oblò chiuso",
+    Programme: "Programma", "Temp · Spin": "Temp. · Centrifuga", "Dry level": "Livello asciugatura", Ends: "Fine", Cycles: "Cicli", Status: "Stato",
+    End: "Fine", Washer: "Lavatrice", Dryer: "Asciugatrice", "All programmes": "Tutti i programmi", "Favourites only": "Solo preferiti",
+    ask_off: (n, run) => `${n}: spegnere?${run ? " Il ciclo in corso verrà interrotto." : ""}`,
+    ask_stop: n => `${n}: fermare? Il ciclo in corso verrà annullato.`,
+    ask_standby: n => `${n}: mettere in standby? Il ciclo in corso verrà annullato.`,
+    no_device: "Dispositivo non trovato in Home Assistant. Controlla l'opzione entity.",
+    send_err: m => `Invio non riuscito: ${m}`, start_err: m => `Avvio non riuscito: ${m}`,
+    prog_code: c => `Programma n. ${c}`, phase_n: n => `Fase ${n}`, level_n: n => `Livello ${n}`,
+    progs_title: t => `${t} – programmi`, search: n => `Cerca tra ${n} programmi`, start_q: (p, n) => `${n}: avviare ${p}?`,
+    st_note: n => `La scelta dei programmi richiede l'integrazione hOn. Con SmartThings scegli il programma sulla macchina, attiva il controllo remoto e premi Avvia sulla scheda ${n}.`,
+    running_note: n => `${n}: ciclo in corso. Metti in pausa o in standby prima di avviare un altro programma.`,
+    remote_off: n => `${n}: il controllo remoto è spento. Attivalo sulla macchina per avviare i programmi da qui.`,
+    prog: { Cotton: "Cotone", Mixed: "Misti", Synthetic: "Sintetici", Synthetics: "Sintetici", Delicate: "Delicati", Delicates: "Delicati",
+      Wool: "Lana", "Bed Linen": "Lenzuola", "Allergy Care": "Anti-allergia", Rinse: "Risciacquo", "Drain + Spin": "Scarico + Centrifuga",
+      "Eco Cotton": "Cotone Eco", "Easy Iron": "Stiro facile", Duvet: "Piumone", "All in One": "Tutto in uno", "Relax Creases": "Antipiega",
+      Jeans: "Jeans", Rapid: "Rapido" },
+  },
+  es: {
+    off_btn: "Apagar",
+    Off: "Apagada", On: "Encendida", Start: "Iniciar", Pause: "Pausa", Resume: "Reanudar", Standby: "En espera", Stop: "Detener", Cancel: "Cancelar",
+    Yes: "Sí", Running: "En marcha", Paused: "En pausa", Finished: "Terminado", Ready: "Lista", Scheduled: "Programado", Disconnected: "Desconectada",
+    Error: "Error", Ending: "Terminando", Waiting: "Esperando", Drying: "Secado", Cooldown: "Enfriamiento", Washing: "Lavado", Spin: "Centrifugado",
+    Rinse: "Aclarado", Steam: "Vapor", Weighing: "Pesando", Tumbling: "Volteo", Refresh: "Refrescar", Heating: "Calentando",
+    "Air wash": "Lavado con aire", "Pre-wash": "Prelavado", "Anti-crease": "Antiarrugas", Sanitising: "Higienizado", "Self clean": "Autolimpieza",
+    "Freeze guard": "Antiheladas", "Cupboard dry": "Seco armario", "Extra dry": "Extra seco", "Ready to store": "Listo para guardar",
+    "Ready to iron": "Listo para planchar",
+    "Remote control": "Control remoto", "Door locked (cycle running)": "Puerta bloqueada (ciclo en marcha)", "Door unlocked": "Puerta desbloqueada",
+    "Door open": "Puerta abierta", "Door closed": "Puerta cerrada",
+    Programme: "Programa", "Temp · Spin": "Temp. · Centrif.", "Dry level": "Nivel de secado", Ends: "Termina", Cycles: "Ciclos", Status: "Estado",
+    End: "Fin", Washer: "Lavadora", Dryer: "Secadora", "All programmes": "Todos los programas", "Favourites only": "Solo favoritos",
+    ask_off: (n, run) => `${n}: ¿apagar?${run ? " Se detendrá el ciclo actual." : ""}`,
+    ask_stop: n => `${n}: ¿detener? Se cancelará el ciclo actual.`,
+    ask_standby: n => `${n}: ¿poner en espera? Se cancelará el ciclo actual.`,
+    no_device: "No se encontró el dispositivo en Home Assistant. Revisa la opción entity.",
+    send_err: m => `No se pudo enviar: ${m}`, start_err: m => `No se pudo iniciar: ${m}`,
+    prog_code: c => `Programa n.º ${c}`, phase_n: n => `Fase ${n}`, level_n: n => `Nivel ${n}`,
+    progs_title: t => `${t} – programas`, search: n => `Buscar entre ${n} programas`, start_q: (p, n) => `${n}: ¿iniciar ${p}?`,
+    st_note: n => `Para elegir programas hace falta la integración hOn. Con SmartThings, elige el programa en la máquina, activa el control remoto y pulsa Iniciar en la tarjeta ${n}.`,
+    running_note: n => `${n}: ciclo en marcha. Pausa o pon en espera antes de iniciar otro programa.`,
+    remote_off: n => `${n}: el control remoto está apagado. Actívalo en la máquina para iniciar programas desde aquí.`,
+    prog: { Cotton: "Algodón", Mixed: "Mixto", Synthetic: "Sintéticos", Synthetics: "Sintéticos", Delicate: "Delicados", Delicates: "Delicados",
+      Wool: "Lana", "Bed Linen": "Ropa de cama", "Allergy Care": "Antialergia", Rinse: "Aclarado", "Drain + Spin": "Desagüe + Centrifugado",
+      "Eco Cotton": "Algodón Eco", "Easy Iron": "Fácil planchado", Duvet: "Edredón", "All in One": "Todo en uno", "Relax Creases": "Antiarrugas",
+      Jeans: "Vaqueros", Rapid: "Rápido" },
+  },
+  nl: {
+    off_btn: "Uit",
+    Off: "Uit", On: "Aan", Start: "Start", Pause: "Pauze", Resume: "Hervatten", Standby: "Stand-by", Stop: "Stop", Cancel: "Annuleren", Yes: "Ja",
+    Running: "Bezig", Paused: "Gepauzeerd", Finished: "Klaar", Ready: "Gereed", Scheduled: "Gepland", Disconnected: "Niet verbonden", Error: "Fout",
+    Ending: "Bijna klaar", Waiting: "Wachten", Drying: "Drogen", Cooldown: "Afkoelen", Washing: "Wassen", Spin: "Centrifugeren", Rinse: "Spoelen",
+    Steam: "Stoom", Weighing: "Wegen", Tumbling: "Trommelen", Refresh: "Opfrissen", Heating: "Opwarmen", "Air wash": "Luchtwas",
+    "Pre-wash": "Voorwas", "Anti-crease": "Anti-kreuk", Sanitising: "Hygiëne", "Self clean": "Zelfreiniging", "Freeze guard": "Vorstbeveiliging",
+    "Cupboard dry": "Kastdroog", "Extra dry": "Extra droog", "Ready to store": "Klaar om op te bergen", "Ready to iron": "Strijkdroog",
+    "Remote control": "Bediening op afstand", "Door locked (cycle running)": "Deur vergrendeld (programma bezig)", "Door unlocked": "Deur ontgrendeld",
+    "Door open": "Deur open", "Door closed": "Deur dicht",
+    Programme: "Programma", "Temp · Spin": "Temp. · Toeren", "Dry level": "Droogniveau", Ends: "Klaar om", Cycles: "Cycli", Status: "Status",
+    End: "Eind", Washer: "Wasmachine", Dryer: "Droger", "All programmes": "Alle programma's", "Favourites only": "Alleen favorieten",
+    ask_off: (n, run) => `${n}: uitzetten?${run ? " Het lopende programma stopt." : ""}`,
+    ask_stop: n => `${n}: stoppen? Het lopende programma wordt geannuleerd.`,
+    ask_standby: n => `${n}: op stand-by zetten? Het lopende programma wordt geannuleerd.`,
+    no_device: "Apparaat niet gevonden in Home Assistant. Controleer de optie entity.",
+    send_err: m => `Versturen mislukt: ${m}`, start_err: m => `Starten mislukt: ${m}`,
+    prog_code: c => `Programma #${c}`, phase_n: n => `Fase ${n}`, level_n: n => `Niveau ${n}`,
+    progs_title: t => `${t} – programma's`, search: n => `Zoek in ${n} programma's`, start_q: (p, n) => `${n}: ${p} starten?`,
+    st_note: n => `Programma's kiezen kan alleen met de hOn-integratie. Kies bij SmartThings het programma op de machine, zet bediening op afstand aan en druk op Start op de kaart ${n}.`,
+    running_note: n => `${n} is bezig. Pauzeer of zet op stand-by voordat je een ander programma start.`,
+    remote_off: n => `${n}: bediening op afstand staat uit. Zet het aan op de machine om hier programma's te starten.`,
+    prog: { Cotton: "Katoen", Mixed: "Gemengd", Synthetic: "Synthetisch", Synthetics: "Synthetisch", Delicate: "Fijne was", Delicates: "Fijne was",
+      Wool: "Wol", "Bed Linen": "Beddengoed", "Allergy Care": "Anti-allergie", Rinse: "Spoelen", "Drain + Spin": "Pompen + Centrifugeren",
+      "Eco Cotton": "Eco Katoen", "Easy Iron": "Strijkvrij", Duvet: "Dekbed", "All in One": "Alles in één", "Relax Creases": "Kreukherstel",
+      Jeans: "Jeans", Rapid: "Snel" },
+  },
+  pl: {
+    off_btn: "Wyłącz",
+    Off: "Wyłączona", On: "Włączona", Start: "Start", Pause: "Pauza", Resume: "Wznów", Standby: "Czuwanie", Stop: "Stop", Cancel: "Anuluj", Yes: "Tak",
+    Running: "Pracuje", Paused: "Wstrzymana", Finished: "Zakończono", Ready: "Gotowa", Scheduled: "Zaplanowano", Disconnected: "Rozłączona",
+    Error: "Błąd", Ending: "Kończy", Waiting: "Oczekuje", Drying: "Suszenie", Cooldown: "Chłodzenie", Washing: "Pranie", Spin: "Wirowanie",
+    Rinse: "Płukanie", Steam: "Para", Weighing: "Ważenie", Tumbling: "Obracanie", Refresh: "Odświeżanie", Heating: "Grzanie",
+    "Air wash": "Pranie powietrzem", "Pre-wash": "Pranie wstępne", "Anti-crease": "Przeciw gnieceniu", Sanitising: "Higiena",
+    "Self clean": "Samoczyszczenie", "Freeze guard": "Ochrona przed mrozem", "Cupboard dry": "Do szafy", "Extra dry": "Extra suche",
+    "Ready to store": "Do schowania", "Ready to iron": "Do prasowania",
+    "Remote control": "Zdalne sterowanie", "Door locked (cycle running)": "Drzwi zablokowane (trwa cykl)", "Door unlocked": "Drzwi odblokowane",
+    "Door open": "Drzwi otwarte", "Door closed": "Drzwi zamknięte",
+    Programme: "Program", "Temp · Spin": "Temp. · Wirowanie", "Dry level": "Poziom suszenia", Ends: "Koniec o", Cycles: "Cykle", Status: "Stan",
+    End: "Koniec", Washer: "Pralka", Dryer: "Suszarka", "All programmes": "Wszystkie programy", "Favourites only": "Tylko ulubione",
+    ask_off: (n, run) => `${n}: wyłączyć?${run ? " To zatrzyma bieżący cykl." : ""}`,
+    ask_stop: n => `${n}: zatrzymać? To anuluje bieżący cykl.`,
+    ask_standby: n => `${n}: przełączyć w tryb czuwania? To anuluje bieżący cykl.`,
+    no_device: "Nie znaleziono urządzenia w Home Assistant. Sprawdź opcję entity.",
+    send_err: m => `Nie udało się wysłać: ${m}`, start_err: m => `Nie udało się uruchomić: ${m}`,
+    prog_code: c => `Program nr ${c}`, phase_n: n => `Faza ${n}`, level_n: n => `Poziom ${n}`,
+    progs_title: t => `${t} – programy`, search: n => `Szukaj wśród ${n} programów`, start_q: (p, n) => `${n}: uruchomić ${p}?`,
+    st_note: n => `Wybór programów wymaga integracji hOn. Przy SmartThings wybierz program na urządzeniu, włącz zdalne sterowanie i naciśnij Start na karcie ${n}.`,
+    running_note: n => `${n}: trwa cykl. Wstrzymaj go lub przełącz w tryb czuwania, zanim uruchomisz inny program.`,
+    remote_off: n => `${n}: zdalne sterowanie jest wyłączone. Włącz je na urządzeniu, aby uruchamiać programy stąd.`,
+    prog: { Cotton: "Bawełna", Mixed: "Mieszane", Synthetic: "Syntetyki", Synthetics: "Syntetyki", Delicate: "Delikatne", Delicates: "Delikatne",
+      Wool: "Wełna", "Bed Linen": "Pościel", "Allergy Care": "Antyalergia", Rinse: "Płukanie", "Drain + Spin": "Odpompowanie + Wirowanie",
+      "Eco Cotton": "Bawełna Eco", "Easy Iron": "Łatwe prasowanie", Duvet: "Kołdra", "All in One": "Wszystko w jednym", "Relax Creases": "Wygładzanie",
+      Jeans: "Dżinsy", Rapid: "Szybki" },
+  },
+  pt: {
+    off_btn: "Desligar",
+    Off: "Desligada", On: "Ligada", Start: "Iniciar", Pause: "Pausa", Resume: "Retomar", Standby: "Em espera", Stop: "Parar", Cancel: "Cancelar",
+    Yes: "Sim", Running: "Em curso", Paused: "Em pausa", Finished: "Terminado", Ready: "Pronta", Scheduled: "Agendado", Disconnected: "Sem ligação",
+    Error: "Erro", Ending: "A terminar", Waiting: "A aguardar", Drying: "Secagem", Cooldown: "Arrefecimento", Washing: "Lavagem",
+    Spin: "Centrifugação", Rinse: "Enxaguamento", Steam: "Vapor", Weighing: "Pesagem", Tumbling: "Rotação", Refresh: "Refrescar",
+    Heating: "Aquecimento", "Air wash": "Lavagem a ar", "Pre-wash": "Pré-lavagem", "Anti-crease": "Antirrugas", Sanitising: "Higienização",
+    "Self clean": "Autolimpeza", "Freeze guard": "Anticongelamento", "Cupboard dry": "Seco armário", "Extra dry": "Extra seco",
+    "Ready to store": "Pronto a guardar", "Ready to iron": "Pronto a engomar",
+    "Remote control": "Controlo remoto", "Door locked (cycle running)": "Porta bloqueada (ciclo em curso)", "Door unlocked": "Porta desbloqueada",
+    "Door open": "Porta aberta", "Door closed": "Porta fechada",
+    Programme: "Programa", "Temp · Spin": "Temp. · Centrif.", "Dry level": "Nível de secagem", Ends: "Termina", Cycles: "Ciclos", Status: "Estado",
+    End: "Fim", Washer: "Máquina de lavar", Dryer: "Máquina de secar", "All programmes": "Todos os programas", "Favourites only": "Só favoritos",
+    ask_off: (n, run) => `${n}: desligar?${run ? " Isto para o ciclo atual." : ""}`,
+    ask_stop: n => `${n}: parar? Isto cancela o ciclo atual.`,
+    ask_standby: n => `${n}: pôr em espera? Isto cancela o ciclo atual.`,
+    no_device: "Não foi possível encontrar o dispositivo no Home Assistant. Verifique a opção entity.",
+    send_err: m => `Não foi possível enviar: ${m}`, start_err: m => `Não foi possível iniciar: ${m}`,
+    prog_code: c => `Programa n.º ${c}`, phase_n: n => `Fase ${n}`, level_n: n => `Nível ${n}`,
+    progs_title: t => `${t} – programas`, search: n => `Pesquisar em ${n} programas`, start_q: (p, n) => `${n}: iniciar ${p}?`,
+    st_note: n => `Escolher programas requer a integração hOn. Com SmartThings, escolha o programa na máquina, ative o controlo remoto e prima Iniciar no cartão ${n}.`,
+    running_note: n => `${n}: ciclo em curso. Pause ou ponha em espera antes de iniciar outro programa.`,
+    remote_off: n => `${n}: o controlo remoto está desligado. Ligue-o na máquina para iniciar programas a partir daqui.`,
+    prog: { Cotton: "Algodão", Mixed: "Mistos", Synthetic: "Sintéticos", Synthetics: "Sintéticos", Delicate: "Delicados", Delicates: "Delicados",
+      Wool: "Lã", "Bed Linen": "Roupa de cama", "Allergy Care": "Antialergia", Rinse: "Enxaguamento", "Drain + Spin": "Escoar + Centrifugar",
+      "Eco Cotton": "Algodão Eco", "Easy Iron": "Fácil de engomar", Duvet: "Edredão", "All in One": "Tudo em Um", "Relax Creases": "Antirrugas",
+      Jeans: "Ganga", Rapid: "Rápido" },
+  },
+};
+const pickLang = (c, h) => {
+  const l = String(c.language || h?.locale?.language || h?.language || "en").toLowerCase().split(/[-_]/)[0];
+  return I18N[l] ? l : "en";
+};
+// a word or sentence in the card's language; English when there's no translation
+const tr = (lang, key, ...a) => {
+  const v = I18N[lang]?.[key] ?? I18N.en[key] ?? key;
+  return typeof v === "function" ? v(...a) : v;
 };
 const DEFAULTS = {
   washer: { entity: "washing_machine", title: "Washer", colour: "#4fb3ff",
@@ -126,7 +349,7 @@ function setup(c) {
   const d = DEFAULTS[c.appliance], integration = INTEGRATIONS[String(c.integration || "hon").toLowerCase()];
   if (!integration) throw new Error("integration must be hon or smartthings");
   const entity = c.entity || (integration === "smartthings" ? c.appliance : d.entity);
-  return { ...c, integration, entity, title: c.name || d.title, colour: c.colour || d.colour,
+  return { ...c, integration, entity, title: c.name || d.title, ownTitle: !!c.name, colour: c.colour || d.colour,
     style: c.style === "drawn" ? "drawn" : "photo", images: c.images ? c.images.replace(/\/?$/, "/") : "",
     finish: FINISH_NAMES[String(c.finish || "").toLowerCase()] || "white",
     names: c.names && typeof c.names === "object" ? Object.fromEntries(Object.entries(c.names).map(([k, v]) => [String(k), String(v)])) : {} };
@@ -227,7 +450,7 @@ ha-card { display:block; background:var(--hon-card-bg,#2a2a2a); border:1px solid
 
 const fmt = s => { s = Math.max(0, Math.round(s));
   return `${Math.floor(s / 3600)}:${String(Math.floor(s % 3600 / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`; };
-const hhmm = d => d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+const hhmm = (d, lang) => d.toLocaleTimeString(lang && lang !== "en" ? lang : [], { hour: "2-digit", minute: "2-digit" });
 
 class HonApplianceCard extends HTMLElement {
   setConfig(c) {
@@ -241,22 +464,30 @@ class HonApplianceCard extends HTMLElement {
     clearInterval(this._tick); this._tick = setInterval(() => this._time(), 1000);
   }
   disconnectedCallback() { clearInterval(this._tick); }
-  set hass(h) { this._hass = h; if (this.shadowRoot) this._render(); }
+  set hass(h) {
+    this._hass = h; if (!this.shadowRoot) return;
+    if (pickLang(this._config, h) !== this._lang) this._build();   // Home Assistant's language arrives with hass
+    this._render();
+  }
+  _tr(key, ...a) { return tr(this._lang, key, ...a); }
+  // the card name: your own, else "Washer"/"Dryer" in the card's language
+  _title() { return this._config.ownTitle ? this._config.title : this._tr(this._config.title); }
 
   _build() {
     const c = this._config, dryer = c.appliance === "dryer", g = GEOM[c.style][c.appliance];
+    const T = k => esc(this._tr(k)); this._lang = pickLang(c, this._hass);
     const r = this.shadowRoot || this.attachShadow({ mode: "open" });
     r.innerHTML = `<style>${CSS}</style>
     <ha-card class="${c.appliance} ${c.style}" style="--c:${esc(c.colour)}">
-      <div class="head"><span class="name">${esc(c.title)}</span><span class="pill" id="pill">Off</span></div>
+      <div class="head"><span class="name">${esc(this._title())}</span><span class="pill" id="pill">${T("Off")}</span></div>
       <div class="ctl" id="ctl" hidden>
-        <button id="start" hidden><ha-icon icon="mdi:play"></ha-icon>Start</button>
-        <button id="pause"><ha-icon icon="mdi:pause"></ha-icon>Pause</button>
-        <button id="resume"><ha-icon icon="mdi:play"></ha-icon>Resume</button>
-        <button id="standby"><ha-icon icon="mdi:stop"></ha-icon>${c.integration === "smartthings" ? "Stop" : "Standby"}</button>
-        <button id="off"><ha-icon icon="mdi:power"></ha-icon>Off</button>
+        <button id="start" hidden><ha-icon icon="mdi:play"></ha-icon>${T("Start")}</button>
+        <button id="pause"><ha-icon icon="mdi:pause"></ha-icon>${T("Pause")}</button>
+        <button id="resume"><ha-icon icon="mdi:play"></ha-icon>${T("Resume")}</button>
+        <button id="standby"><ha-icon icon="mdi:stop"></ha-icon>${T(c.integration === "smartthings" ? "Stop" : "Standby")}</button>
+        <button id="off"><ha-icon icon="mdi:power"></ha-icon>${T("off_btn")}</button>
       </div>
-      <div class="ask" id="ask" hidden><span id="askT"></span><button id="askNo">Cancel</button><button class="go" id="askYes">Yes</button></div>
+      <div class="ask" id="ask" hidden><span id="askT"></span><button id="askNo">${T("Cancel")}</button><button class="go" id="askYes">${T("Yes")}</button></div>
       <div class="err" id="err"></div>
       <div class="pic" id="pic" style="--ratio:${g.ratio};--drum:url('${esc(honImg(c, "laundry-drum.webp"))}');${c.max_width ? `--maxw:${esc(c.max_width)}` : ""}">
         ${c.style === "photo" ? `<img class="machine" src="${esc(honImg(c, dryer ? "dryer.svg" : "washer.svg"))}" alt="">` : machineSVG(dryer)}
@@ -270,7 +501,7 @@ class HonApplianceCard extends HTMLElement {
             <circle class="bar" id="bar" cx="50" cy="50" r="48" pathLength="100" stroke-dasharray="100" stroke-dashoffset="100"/></svg>
         </div>
         <div class="lcd" style="left:${g.lcd.x}%;top:${g.lcd.y}%;width:${g.lcd.w}%;height:${g.lcd.h}%"><span class="t" id="lcd">--:--</span><span class="s" id="lcdS"></span></div>
-        <div class="at icon" id="wifi" style="left:${g.wifi.x}%;top:${g.wifi.y}%" title="Remote control"><ha-icon icon="mdi:wifi"></ha-icon></div>
+        <div class="at icon" id="wifi" style="left:${g.wifi.x}%;top:${g.wifi.y}%" title="${T("Remote control")}"><ha-icon icon="mdi:wifi"></ha-icon></div>
         <div class="at icon" id="door" style="left:${g.door.x}%;top:${g.door.y}%"><ha-icon icon="mdi:lock-open-variant"></ha-icon></div>
         <div class="panel" id="rows"></div>
       </div>
@@ -292,12 +523,10 @@ class HonApplianceCard extends HTMLElement {
 
   _mainId() { const c = this._config; return c.integration === "smartthings" ? `sensor.${c.entity}_machine_state` : `binary_sensor.${c.entity}_status`; }
   _ask(what) {
-    const r = this.shadowRoot, name = this._config.title.toLowerCase(); this._asking = what;
+    const r = this.shadowRoot, name = this._title(); this._asking = what;
     r.getElementById("ask").hidden = !what;
-    if (what) r.getElementById("askT").textContent = what === "off"
-      ? `Turn the ${name} off?${this._t?.on ? " This stops the current cycle." : ""}`
-      : this._config.integration === "smartthings" ? `Stop the ${name}? This cancels the current cycle.`
-      : `Put the ${name} in standby? This cancels the current cycle.`;
+    if (what) r.getElementById("askT").textContent = what === "off" ? this._tr("ask_off", name, !!this._t?.on)
+      : this._tr(this._config.integration === "smartthings" ? "ask_stop" : "ask_standby", name);
   }
   async _send(action) {
     const r = this.shadowRoot, c = this._config, h = this._hass;
@@ -312,15 +541,15 @@ class HonApplianceCard extends HTMLElement {
       }
       // hOn: set_mode 3 = pause, 2 = resume, 1 = standby; turn_off = power off
       const dev = h?.entities?.[`binary_sensor.${c.entity}_status`]?.device_id;
-      if (!dev) { r.getElementById("err").textContent = "Couldn't find this machine's device in Home Assistant. Check the entity option."; return; }
+      if (!dev) { r.getElementById("err").textContent = this._tr("no_device"); return; }
       if (action === "off") await h.callService("hon", "turn_off", { device: dev });
       else await h.callService("hon", "set_mode", { device: dev, mode: { pause: "3", resume: "2", standby: "1" }[action] });
-    } catch (e) { r.getElementById("err").textContent = `Couldn't send that: ${e.message || e}`; }
+    } catch (e) { r.getElementById("err").textContent = this._tr("send_err", e.message || e); }
   }
 
   _st(id) { const s = this._hass?.states[id]; return s && !["unknown", "unavailable", ""].includes(s.state) ? s : null; }
   _val(k) { return this._st(`sensor.${this._config.entity}_${k}`)?.state ?? null; }
-  _name(kind, v) { return v == null ? null : HON[this._config.appliance]?.[kind]?.[v] ?? null; }
+  _name(kind, v) { const n = v == null ? null : HON[this._config.appliance]?.[kind]?.[v]; return n == null ? null : this._tr(n); }
 
   // hOn often reports "No program" (or the last run's name) for cycles started on the dial.
   // Order: what this dashboard just started > program_name > "Programme #code".
@@ -328,10 +557,10 @@ class HonApplianceCard extends HTMLElement {
     const code = this._val("program_code"), prog = this._val("program_name");
     try {
       const mine = JSON.parse(localStorage.getItem(`hon-started-${this._config.entity}`) || "null");
-      if (mine && powered && Date.now() - mine.at < 6 * 3600e3) return label(mine.k, this._config.names);
+      if (mine && powered && Date.now() - mine.at < 6 * 3600e3) return label(mine.k, this._config.names, this._lang);
     } catch (e) {}
-    if (prog && !["No program", "home_assistant"].includes(prog)) return label(prog, this._config.names);
-    return code != null && code !== "0" ? `Programme #${code}` : "—";
+    if (prog && !["No program", "home_assistant"].includes(prog)) return label(prog, this._config.names, this._lang);
+    return code != null && code !== "0" ? this._tr("prog_code", code) : "—";
   }
 
   // hOn: what the machine is doing, in the shape _render draws
@@ -343,9 +572,9 @@ class HonApplianceCard extends HTMLElement {
     const on = powered && RUNNING_MODES.includes(mode);
     const done = !on && mode === "7";
     const cool = on && !washer && phaseCode === "3";
-    const phase = this._name("phase", phaseCode) || (phaseCode != null ? `Phase ${phaseCode}` : "");
-    const pill = on ? (phaseCode && phaseCode !== "0" ? phase : this._name("mode", mode) || "Running")
-      : powered ? this._name("mode", mode) || "On" : done ? "Finished" : "Off";
+    const phase = this._name("phase", phaseCode) || (phaseCode != null ? this._tr("phase_n", phaseCode) : "");
+    const pill = on ? (phaseCode && phaseCode !== "0" ? phase : this._name("mode", mode) || this._tr("Running"))
+      : this._tr(powered ? this._name("mode", mode) || "On" : done ? "Finished" : "Off");
 
     // timing: hOn gives start/end timestamps while running; remaining_time (whole minutes) is the fallback
     const rem = this._st(`sensor.${dev}_remaining_time`);
@@ -357,15 +586,15 @@ class HonApplianceCard extends HTMLElement {
       end = this._remEnd;
     }
 
-    const rows = [["Programme", this._programme(powered)]];
+    const T = k => this._tr(k), rows = [[T("Programme"), this._programme(powered)]];
     if (washer) {
       const t = this._val("temperature"), s = this._val("spin_speed");
-      rows.push(["Temp · Spin", `${t != null ? t + " °C" : "—"} · ${s != null && s !== "0" ? s + " rpm" : "—"}`]);
+      rows.push([T("Temp · Spin"), `${t != null ? t + " °C" : "—"} · ${s != null && s !== "0" ? s + " rpm" : "—"}`]);
     } else {
       const dl = this._val("dry_level");
-      rows.push(["Dry level", this._name("dry_level", dl) || (dl != null ? `Level ${dl}` : "—")]);
+      rows.push([T("Dry level"), this._name("dry_level", dl) || (dl != null ? this._tr("level_n", dl) : "—")]);
     }
-    rows.push([on ? "Ends" : "Cycles", on ? (isNaN(end) ? "—" : hhmm(new Date(end))) : this._val("total_programs") ?? "—"]);
+    rows.push([T(on ? "Ends" : "Cycles"), on ? (isNaN(end) ? "—" : hhmm(new Date(end), this._lang)) : this._val("total_programs") ?? "—"]);
     return { powered, on, done, cool, paused: on && mode === "3", phase, pill, start, end, pct: null, rows,
       canOff: true, canStart: false, door: this._st(`binary_sensor.${dev}_door_status`) };
   }
@@ -379,8 +608,8 @@ class HonApplianceCard extends HTMLElement {
     const powered = on || power?.state === "on";
     const done = !on && (job === "finish" || job === "finished" || (powered && progress >= 100));
     const cool = on && job === "cooling";
-    const phase = job != null ? (ST.phase[job] ?? nice(job)) : "";
-    const pill = on ? (machine === "pause" ? "Paused" : phase || "Running") : done ? "Finished" : powered ? "Ready" : "Off";
+    const T = k => this._tr(k), phase = job != null ? (ST.phase[job] != null ? T(ST.phase[job]) : nice(job)) : "";
+    const pill = on ? (machine === "pause" ? T("Paused") : phase || T("Running")) : T(done ? "Finished" : powered ? "Ready" : "Off");
 
     // completion_time is the finish timestamp; when idle it can be stale, so only trust it when it's ahead
     let end = Date.parse(this._val("completion_time") || "");
@@ -405,10 +634,10 @@ class HonApplianceCard extends HTMLElement {
       const t = sel("water_temperature"), s = sel("spin_level");
       const temp = t == null || t === "none" ? "—" : /^\d+$/.test(t) ? `${t} °C` : nice(t);
       const spin = s == null || s === "none" ? "—" : /^\d+$/.test(s) ? `${s} rpm` : nice(s);
-      rows.push(["Temp · Spin", `${temp} · ${spin}`]);
+      rows.push([T("Temp · Spin"), `${temp} · ${spin}`]);
     }
-    rows.push(["Status", on ? ST.machine[machine] : done ? "Finished" : powered ? "Ready" : "Off"]);
-    rows.push(["Ends", isNaN(end) || !on ? "—" : hhmm(new Date(end))]);
+    rows.push([T("Status"), T(on ? ST.machine[machine] : done ? "Finished" : powered ? "Ready" : "Off")]);
+    rows.push([T("Ends"), isNaN(end) || !on ? "—" : hhmm(new Date(end), this._lang)]);
     return { powered, on, done, cool, paused: machine === "pause", phase, pill, start, end,
       pct: on && progress > 0 ? progress : null, rows,   // missing or stuck at 0: fall back to start -> completion_time
       canOff: !!power, canStart: powered && !on && !done && !!this._st(`select.${dev}`), door: null };
@@ -425,7 +654,7 @@ class HonApplianceCard extends HTMLElement {
     const pill = r.getElementById("pill");
     pill.className = "pill" + (cool ? " cool" : on ? " run" : done ? " done" : "");
     pill.textContent = s.pill;
-    r.getElementById("phase").textContent = done ? "Finished" : s.phase;
+    r.getElementById("phase").textContent = done ? this._tr("Finished") : s.phase;
     this._t = { on, done, start: s.start, end: s.end, pct: s.pct, ready: powered && !on && !done };
 
     const wifi = this._st(`binary_sensor.${this._config.entity}_remote_control`)?.state === "on";
@@ -442,11 +671,11 @@ class HonApplianceCard extends HTMLElement {
     if (!doorSensor) {
       // no door sensor (most washers): the door is locked while a cycle is under way
       door.querySelector("ha-icon").setAttribute("icon", on ? "mdi:lock" : "mdi:lock-open-variant");
-      door.classList.toggle("lit", on); door.title = on ? "Door locked (cycle running)" : "Door unlocked";
+      door.classList.toggle("lit", on); door.title = this._tr(on ? "Door locked (cycle running)" : "Door unlocked");
     } else {
       const open = doorSensor.state === "on";
       door.querySelector("ha-icon").setAttribute("icon", open ? "mdi:door-open" : on ? "mdi:lock" : "mdi:door-closed");
-      door.classList.toggle("lit", on && !open); door.title = open ? "Door open" : "Door closed";
+      door.classList.toggle("lit", on && !open); door.title = this._tr(open ? "Door open" : "Door closed");
     }
 
     r.getElementById("rows").innerHTML = s.rows.map(([k, x]) => `<div class="row"><span>${k}</span><span>${esc(x)}</span></div>`).join("");
@@ -463,8 +692,8 @@ class HonApplianceCard extends HTMLElement {
     const bar = r.getElementById("bar"); bar.style.strokeDashoffset = String(100 - pct); bar.style.opacity = pct > 0 ? 1 : 0;
     // switched on but not started: show the selected programme's length, like the machine does
     r.getElementById("lcd").textContent = (t.on || t.ready) && !isNaN(left) ? fmt(t.ready ? Math.round(left / 60) * 60 : left)
-      : t.done ? "End" : "--:--";
-    r.getElementById("lcdS").textContent = t.on ? `${Math.round(pct)}%` : t.ready ? "Ready" : "";
+      : t.done ? this._tr("End") : "--:--";
+    r.getElementById("lcdS").textContent = t.on ? `${Math.round(pct)}%` : t.ready ? this._tr("Ready") : "";
   }
 }
 // each name is only registered if it's free, so a second copy (e.g. the blog download plus HACS) can't stop the page with an error
@@ -506,33 +735,38 @@ class HonProgrammesCard extends HTMLElement {
   }
   getCardSize() { return 6; }
   connectedCallback() { if (!this.shadowRoot && this._config) this._build(); }
-  set hass(h) { this._hass = h; this._render(); }
+  set hass(h) {
+    this._hass = h;
+    if (this.shadowRoot && pickLang(this._config, h) !== this._lang) this._build();   // Home Assistant's language arrives with hass
+    this._render();
+  }
+  _tr(key, ...a) { return tr(this._lang, key, ...a); }
+  _title() { return this._config.ownTitle ? this._config.title : this._tr(this._config.title); }
 
   _build() {
-    const c = this._config, all = c.programmes || [];
-    const favs = c.favourites || DEFAULTS[c.appliance].favourites;
-    const btn = k => `<button class="prog" data-k="${esc(k)}">${esc(label(k, c.names))}</button>`;
-    const r = this.attachShadow({ mode: "open" });
+    const c = this._config, all = c.programmes || [], lang = this._lang = pickLang(c, this._hass), T = k => esc(this._tr(k));
+    const favs = c.favourites || DEFAULTS[c.appliance].favourites, title = this._title();
+    const btn = k => `<button class="prog" data-k="${esc(k)}">${esc(label(k, c.names, lang))}</button>`;
+    const r = this.shadowRoot || this.attachShadow({ mode: "open" });
     if (c.integration !== "hon") {
       // SmartThings doesn't give Home Assistant the cycle list, so there's nothing to pick from here
       r.innerHTML = `<style>${PCSS}</style><ha-card style="--c:${esc(c.colour)}">
-        <div class="head"><span>${esc(c.title)} programmes</span></div>
-        <div class="note">Picking programmes needs the hOn integration. With SmartThings, choose the programme on the machine,
-          switch on Remote Control, and press Start on the ${esc(c.title.toLowerCase())} card.</div></ha-card>`;
+        <div class="head"><span>${esc(this._tr("progs_title", title))}</span></div>
+        <div class="note">${esc(this._tr("st_note", title))}</div></ha-card>`;
       return;
     }
     r.innerHTML = `<style>${PCSS}</style><ha-card style="--c:${esc(c.colour)}">
-      <div class="head"><span>${esc(c.title)} programmes</span><button class="small" id="more" ${all.length ? "" : "hidden"}>All programmes</button></div>
+      <div class="head"><span>${esc(this._tr("progs_title", title))}</span><button class="small" id="more" ${all.length ? "" : "hidden"}>${T("All programmes")}</button></div>
       <div class="note" id="note" hidden></div>
       <div class="grid" id="favs">${favs.map(btn).join("")}</div>
-      <div class="all" id="all" hidden><input id="q" type="search" placeholder="Search ${all.length} programmes">
-        <div class="grid" id="list">${[...all].sort((x, y) => label(x, c.names).localeCompare(label(y, c.names))).map(btn).join("")}</div></div>
+      <div class="all" id="all" hidden><input id="q" type="search" placeholder="${esc(this._tr("search", all.length))}">
+        <div class="grid" id="list">${[...all].sort((x, y) => label(x, c.names, lang).localeCompare(label(y, c.names, lang))).map(btn).join("")}</div></div>
       <div class="confirm" id="confirm" hidden><span id="ask"></span>
-        <button class="small" id="no">Cancel</button><button class="small go" id="yes">Start</button></div>
+        <button class="small" id="no">${T("Cancel")}</button><button class="small go" id="yes">${T("Start")}</button></div>
     </ha-card>`;
     r.getElementById("more").addEventListener("click", () => {
       const a = r.getElementById("all"); a.hidden = !a.hidden;
-      r.getElementById("more").textContent = a.hidden ? "All programmes" : "Favourites only";
+      r.getElementById("more").textContent = this._tr(a.hidden ? "All programmes" : "Favourites only");
     });
     r.getElementById("q").addEventListener("input", e => {
       const q = e.target.value.toLowerCase();
@@ -552,18 +786,18 @@ class HonProgrammesCard extends HTMLElement {
     this._sel = k;
     r.querySelectorAll(".prog").forEach(b => b.classList.toggle("sel", b.dataset.k === k));
     r.getElementById("confirm").hidden = !k;
-    if (k) r.getElementById("ask").textContent = `Start ${label(k, this._config.names)} on the ${this._config.title.toLowerCase()}?`;
+    if (k) r.getElementById("ask").textContent = this._tr("start_q", label(k, this._config.names, this._lang), this._title());
   }
   async _start() {
     const k = this._sel, c = this._config, dev = this._hass?.entities?.[`binary_sensor.${c.entity}_status`]?.device_id;
     this._pick(null);
     if (!k) return;
     const n = this.shadowRoot.getElementById("note");
-    if (!dev) { n.hidden = false; n.textContent = "Couldn't find this machine's device in Home Assistant. Check the entity option."; this._err = true; return; }
+    if (!dev) { n.hidden = false; n.textContent = this._tr("no_device"); this._err = true; return; }
     try {
       await this._hass.callService("hon", "start_program", { program: k }, { device_id: dev });
       try { localStorage.setItem(`hon-started-${c.entity}`, JSON.stringify({ k, at: Date.now() })); } catch (e) {}
-    } catch (e) { n.hidden = false; n.textContent = `Couldn't start: ${e.message || e}`; this._err = true; }
+    } catch (e) { n.hidden = false; n.textContent = this._tr("start_err", e.message || e); this._err = true; }
   }
   _render() {
     const r = this.shadowRoot, h = this._hass; if (!r || !h || !r.getElementById("note")) return;
@@ -571,12 +805,11 @@ class HonProgrammesCard extends HTMLElement {
       && RUNNING_MODES.includes(h.states[`sensor.${dev}_mode`]?.state);
     this._remote = h.states[`binary_sensor.${dev}_remote_control`]?.state === "on";
     this._running = running;
-    const n = r.getElementById("note"), name = this._config.title.toLowerCase();
+    const n = r.getElementById("note"), name = this._title();
     if (!this._err || running) {
       this._err = false;
       n.hidden = !running && this._remote;
-      n.textContent = running ? `The ${name} is running. Pause it or put it in standby before starting another programme.`
-        : `Remote Control is off on the ${name}. Switch it on at the machine to start programmes from here.`;
+      n.textContent = this._tr(running ? "running_note" : "remote_off", name);
     }
     if (running) this._pick(null);
   }

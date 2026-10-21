@@ -17,6 +17,7 @@ Dashboard cards for washing machines and tumble dryers in the **hOn** app (**Hai
 - **Door and Remote Control icons.**
 - **Pause, Resume, Standby and Off buttons**, shown when the machine's Remote Control is on. Standby and Off cancel the cycle, so they ask first.
 - **A programmes card:** your favourite programmes as buttons, plus a searchable list of the rest. Tap one, confirm, and it starts.
+- **8 languages:** English, Deutsch, Français, Italiano, Español, Nederlands, Polski and Português, following Home Assistant's language ([see below](#languages)).
 
 Both cards are in one file, with the pictures built in.
 
@@ -46,7 +47,7 @@ Both cards are in one file, with the pictures built in.
 
 1. Download `hon-appliance-card.js` from the [latest release](../../releases/latest).
 2. Copy it to `config/www/hon-appliance-card.js`.
-3. Go to **Settings → Dashboards → ⋮ → Resources**, add `/local/hon-appliance-card.js?v=2.1.1` as a **JavaScript module**, then reload your browser.
+3. Go to **Settings → Dashboards → ⋮ → Resources**, add `/local/hon-appliance-card.js?v=2.2.0` as a **JavaScript module**, then reload your browser.
 
 ## Use
 
@@ -97,6 +98,7 @@ entity: hoover_washer
 | `favourites` | programmes | Programme buttons to show, as hOn programme keys such as `iot_wash_cotton` |
 | `programmes` | programmes | Full list for the "All programmes" search |
 | `names` | both | Your own programme names (see [Your own programme names](#your-own-programme-names)) |
+| `language` | both | `en`, `de`, `fr`, `it`, `es`, `nl`, `pl` or `pt`. Default: Home Assistant's language, else English (see [Languages](#languages)) |
 
 ### Machine colour
 
@@ -129,9 +131,21 @@ Include all three, because the card takes every picture from that folder once `i
 
 To make the progress ring, display and icons line up, draw your machine the same way as the built-in ones: **600 × 850** (portrait), door centre at **298, 352**, glass about **372** across (washer) or **384** (dryer), and the display at the top right, about **374, 10** to **565, 74**. Your own pictures replace `finish`.
 
+### Languages
+
+The cards follow the language set in your Home Assistant profile: English, German, French, Italian, Spanish, Dutch, Polish or Portuguese. Any other language shows English. To pick one for a card, whatever Home Assistant is set to, add `language`:
+
+```yaml
+type: custom:hon-appliance-card
+appliance: washer
+language: de
+```
+
+Everything the card writes is translated: buttons, status, phases, dry levels, the questions and messages, and the common programme names (Cotton, Mixed, Synthetics, Wool, Rapid …). Rarer programmes keep the card's English name; use `names` below for those. If you leave out `name`, the title is translated too (Waschmaschine, Lave-linge …). Spotted a wrong word? Please open an issue.
+
 ### Your own programme names
 
-The hOn integration doesn't pass on the names from the hOn app, only programme keys such as `iot_wash_cotton`, so the card makes its own English names from those. To use the names you know, for example in your own language or the ones you saved in the app, add `names`. Give each programme by its key or by the name the card shows now:
+The hOn integration doesn't pass on the names from the hOn app, only programme keys such as `iot_wash_cotton`, so the card makes its own names from those (in your language for common programmes, English for the rest). To use the names you know, for example in your own language or the ones you saved in the app, add `names`. Give each programme by its key or by the name the card shows now (English or translated):
 
 ```yaml
 type: custom:hon-programmes-card
