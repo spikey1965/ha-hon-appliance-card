@@ -39,16 +39,14 @@ Both cards are in one file, with the pictures built in.
 
 ### HACS (recommended)
 
-1. In HACS, open the three-dot menu and choose **Custom repositories**.
-2. Paste this repository's URL (the address of this page) and choose the type **Dashboard**.
-3. Search for **hOn Washer & Dryer Card**, download it, and reload your browser when asked.
+1. In HACS, search for **hOn Washer & Dryer Card**.
+2. Open it, click **Download**, and reload your browser when asked.
 
 ### Manual
 
-1. In HACS, search for **hOn Washer & Dryer Card**.
-2. Open it, click **Download**, and reload your browser when asked.
+1. Download `hon-appliance-card.js` from the [latest release](../../releases/latest).
+2. Copy it to `config/www/hon-appliance-card.js`.
 3. Go to **Settings → Dashboards → ⋮ → Resources**, add `/local/hon-appliance-card.js?v=2.2.0` as a **JavaScript module**, then reload your browser.
-
 ## Use
 
 This puts each machine above its programme buttons, washer on the left and dryer on the right:
