@@ -32,14 +32,19 @@ Both cards are in one file, with the pictures built in.
 ## Requirements
 
 - Your washer and/or dryer added to the **hOn** app on your phone.
-- The hOn custom integration. **[gvigroux/hon](https://github.com/gvigroux/hon)** is the actively maintained fork. The older Andre0512 version no longer logs in. Add it in HACS as a custom repository, restart Home Assistant, then add **hOn** under **Settings → Devices & services**.
+- The hOn custom integration. **[gvigroux/hon](https://github.com/gvigroux/hon)** is the actively maintained fork. The older Andre0512 version no longer logs in. Install it from **Settings → Marketplace** (before 2026.11, add it in HACS under **⋮ → Custom repositories**), restart Home Assistant, then add **hOn** under **Settings → Devices & services**.
 - **Remote Control** switched on at the machine if you want to start, pause or stop it from Home Assistant. Without it the card still shows everything; it just can't send commands.
 
 ## Install
 
-### HACS (recommended)
+### Marketplace (recommended)
 
-1. In HACS, search for **hOn Washer & Dryer Card**.
+1. In **Settings → Marketplace**, search for **hOn Washer & Dryer Card**.
+2. Open it, click **Install**, and reload your browser.
+
+The first time you use Marketplace, tick **I understand the risks and agree** and click **Continue**.
+
+**On a version older than 2026.11?** Marketplace is still called HACS there. Use **Download** in place of Install and **⋮ → Custom repositories** in place of Add from link.
 2. Open it, click **Download**, and reload your browser when asked.
 
 ### Manual
