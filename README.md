@@ -45,7 +45,6 @@ Both cards are in one file, with the pictures built in.
 The first time you use Marketplace, tick **I understand the risks and agree** and click **Continue**.
 
 **On a version older than 2026.11?** Marketplace is still called HACS there. Use **Download** in place of Install and **⋮ → Custom repositories** in place of Add from link.
-2. Open it, click **Download**, and reload your browser when asked.
 
 ### Manual
 
