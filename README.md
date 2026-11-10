@@ -94,6 +94,7 @@ entity: hoover_washer
 | `name` | both | Card title. Default Washer / Dryer |
 | `colour` | both | Accent colour, e.g. `"#4fb3ff"` |
 | `max_width` | appliance | How wide the machine can get, e.g. `380px` |
+| `rows` | appliance | Which lines show in the box under the drum, e.g. `[status, ends]`. Choose from `programme`, `temp_spin`, `dry_level`, `status` and `ends` (Cycles when it's off). Default: all of them |
 | `style` | appliance | `photo` (default, H-WASH 500 / H-DRY 500 style illustrations) or `drawn` (a simple drawing that suits any front loader) |
 | `finish` | appliance | Colour of the built-in machines: `white` (default), `graphite` or `black` |
 | `images` | appliance | Folder with your own pictures, e.g. `/local/myimg/` (see [Your own pictures](#your-own-pictures)) |
@@ -101,6 +102,23 @@ entity: hoover_washer
 | `programmes` | programmes | Full list for the "All programmes" search |
 | `names` | both | Your own programme names (see [Your own programme names](#your-own-programme-names)) |
 | `language` | both | `en`, `de`, `fr`, `it`, `es`, `nl`, `pl` or `pt`. Default: Home Assistant's language, else English (see [Languages](#languages)) |
+
+### Washer and dryer side by side
+
+In a half-width card the box under the drum grows to fit its lines. To keep it small, pick fewer lines with `rows`:
+
+```yaml
+type: grid
+columns: 2
+square: false
+cards:
+  - type: custom:hon-appliance-card
+    appliance: washer
+    rows: [status, ends]
+  - type: custom:hon-appliance-card
+    appliance: dryer
+    rows: [status, ends]
+```
 
 ### Machine colour
 

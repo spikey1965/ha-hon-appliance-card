@@ -24,6 +24,7 @@
 //     iot_wash_cotton: Baumwolle            (buttons, search, the "Start ...?" question and the Programme line)
 //     Mixed: Mischwäsche
 // Appliance card only:   max_width: 380px
+//                        rows: [status, ends]    which lines show under the drum (default all): programme, temp_spin, dry_level, status, ends
 //                        style: photo | drawn    photo (default) = built-in H-WASH 500 / H-DRY 500 style illustrations; drawn = a simple built-in drawing
 //                        finish: white | graphite | black    colour of the built-in machines (default white)
 //                        images: /local/myimg/    optional: your own washer.svg, dryer.svg and laundry-drum.webp (built-in pictures otherwise)
@@ -31,7 +32,7 @@
 //                        programmes: [...]                    optional full list for the "All programmes" search
 
 
-const HON_CARD_VERSION = "2.2.2";
+const HON_CARD_VERSION = "2.3.0";
 
 // Built-in pictures (illustrations drawn for this card), so it's a single file that installs through HACS.
 const HON_IMG = {
@@ -426,8 +427,10 @@ ha-card { display:block; background:var(--hon-card-bg,#2a2a2a); border:1px solid
 .icon { width:9%; aspect-ratio:1; border-radius:50%; display:grid; place-items:center; background:#000a; }
 .icon ha-icon { --mdc-icon-size:70%; width:70%; color:#9a9a9a; display:grid; place-items:center; }
 .icon.lit ha-icon { color:var(--c); }
-.panel { position:absolute; left:10%; right:10%; bottom:9%; top:79.5%; border-radius:12px; background:#1b1d20e6;
-  display:grid; align-content:center; gap:3px; padding:6px 12px; font-size:clamp(11px,2.9cqw,13.5px); box-shadow:inset 0 0 0 1px #ffffff12; }
+.panel { position:absolute; left:10%; right:10%; bottom:9%; min-height:11.5%; box-sizing:border-box; border-radius:12px; background:#1b1d20e6;
+  display:grid; align-content:center; gap:3px; padding:6px 12px; font-size:clamp(10px,2.9cqw,13.5px); box-shadow:inset 0 0 0 1px #ffffff12; }
+/* narrow cards (e.g. washer and dryer side by side): the box grows up over the drum ring rather than spilling out */
+@container (max-width:320px) { .panel { left:6%; right:6%; gap:1px; padding:4px 8px; line-height:1.25; } }
 .row { display:flex; justify-content:space-between; gap:10px; }
 .row span:first-child { color:var(--muted); }
 .row span:last-child { font-weight:500; text-align:right; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -453,6 +456,13 @@ const fmt = s => { s = Math.max(0, Math.round(s));
 const hhmm = (d, lang) => d.toLocaleTimeString(lang && lang !== "en" ? lang : [], { hour: "2-digit", minute: "2-digit" });
 
 class HonApplianceCard extends HTMLElement {
+  // rows: [status, ends] - which lines the box under the drum shows (default all): programme, temp_spin, dry_level, status, ends (= Cycles when off)
+  _rowsShown(rows) {
+    const w = this._config && this._config.rows; if (!Array.isArray(w) || !w.length) return rows;
+    const alias = { cycles: "ends", drying: "dry_level", dry: "dry_level", temp: "temp_spin", spin: "temp_spin" };
+    const want = new Set(w.map(x => { const k = String(x).toLowerCase().trim(); return alias[k] || k; }));
+    return rows.filter(r => want.has(r[2]));
+  }
   setConfig(c) {
     this._config = setup(c);
     // rebuild when the config changes later too (the dashboard editor's preview), e.g. a new finish or images
@@ -586,15 +596,15 @@ class HonApplianceCard extends HTMLElement {
       end = this._remEnd;
     }
 
-    const T = k => this._tr(k), rows = [[T("Programme"), this._programme(powered)]];
+    const T = k => this._tr(k), rows = [[T("Programme"), this._programme(powered), "programme"]];
     if (washer) {
       const t = this._val("temperature"), s = this._val("spin_speed");
-      rows.push([T("Temp · Spin"), `${t != null ? t + " °C" : "—"} · ${s != null && s !== "0" ? s + " rpm" : "—"}`]);
+      rows.push([T("Temp · Spin"), `${t != null ? t + " °C" : "—"} · ${s != null && s !== "0" ? s + " rpm" : "—"}`, "temp_spin"]);
     } else {
       const dl = this._val("dry_level");
-      rows.push([T("Dry level"), this._name("dry_level", dl) || (dl != null ? this._tr("level_n", dl) : "—")]);
+      rows.push([T("Dry level"), this._name("dry_level", dl) || (dl != null ? this._tr("level_n", dl) : "—"), "dry_level"]);
     }
-    rows.push([T(on ? "Ends" : "Cycles"), on ? (isNaN(end) ? "—" : hhmm(new Date(end), this._lang)) : this._val("total_programs") ?? "—"]);
+    rows.push([T(on ? "Ends" : "Cycles"), on ? (isNaN(end) ? "—" : hhmm(new Date(end), this._lang)) : this._val("total_programs") ?? "—", "ends"]);
     return { powered, on, done, cool, paused: on && mode === "3", phase, pill, start, end, pct: null, rows,
       canOff: true, canStart: false, door: this._st(`binary_sensor.${dev}_door_status`) };
   }
@@ -634,10 +644,10 @@ class HonApplianceCard extends HTMLElement {
       const t = sel("water_temperature"), s = sel("spin_level");
       const temp = t == null || t === "none" ? "—" : /^\d+$/.test(t) ? `${t} °C` : nice(t);
       const spin = s == null || s === "none" ? "—" : /^\d+$/.test(s) ? `${s} rpm` : nice(s);
-      rows.push([T("Temp · Spin"), `${temp} · ${spin}`]);
+      rows.push([T("Temp · Spin"), `${temp} · ${spin}`, "temp_spin"]);
     }
-    rows.push([T("Status"), T(on ? ST.machine[machine] : done ? "Finished" : powered ? "Ready" : "Off")]);
-    rows.push([T("Ends"), isNaN(end) || !on ? "—" : hhmm(new Date(end), this._lang)]);
+    rows.push([T("Status"), T(on ? ST.machine[machine] : done ? "Finished" : powered ? "Ready" : "Off"), "status"]);
+    rows.push([T("Ends"), isNaN(end) || !on ? "—" : hhmm(new Date(end), this._lang), "ends"]);
     return { powered, on, done, cool, paused: machine === "pause", phase, pill, start, end,
       pct: on && progress > 0 ? progress : null, rows,   // missing or stuck at 0: fall back to start -> completion_time
       canOff: !!power, canStart: powered && !on && !done && !!this._st(`select.${dev}`), door: null };
@@ -678,7 +688,7 @@ class HonApplianceCard extends HTMLElement {
       door.classList.toggle("lit", on && !open); door.title = this._tr(open ? "Door open" : "Door closed");
     }
 
-    r.getElementById("rows").innerHTML = s.rows.map(([k, x]) => `<div class="row"><span>${k}</span><span>${esc(x)}</span></div>`).join("");
+    r.getElementById("rows").innerHTML = this._rowsShown(s.rows).map(([k, x]) => `<div class="row"><span>${k}</span><span>${esc(x)}</span></div>`).join("");
     this._time();
   }
 
