@@ -13,7 +13,7 @@
 //
 // Options (both cards):
 //   appliance: washer | dryer             required
-//   integration: hon | smartthings        default hon
+//   integration: hon | smartthings | hon-revived        default hon (hon-revived: beta, status only, no buttons)
 //   entity: washing_machine               the start of your entity IDs (binary_sensor.<entity>_status, sensor.<entity>_mode, ...)
 //                                         defaults: washing_machine for the washer, tumble_dryer for the dryer
 //                                         (smartthings: washer / dryer, i.e. sensor.<entity>_machine_state, select.<entity>, ...)
@@ -32,7 +32,7 @@
 //                        programmes: [...]                    optional full list for the "All programmes" search
 
 
-const HON_CARD_VERSION = "2.3.0";
+const HON_CARD_VERSION = "2.4.0-beta.1";
 
 // Built-in pictures (illustrations drawn for this card), so it's a single file that installs through HACS.
 const HON_IMG = {
@@ -108,6 +108,7 @@ const I18N = {
     prog_code: c => `Programme #${c}`, phase_n: n => `Phase ${n}`, level_n: n => `Level ${n}`,
     progs_title: t => `${t} programmes`, search: n => `Search ${n} programmes`,
     start_q: (p, n) => `Start ${p} on the ${n.toLowerCase()}?`,
+    rv_note: n => `Picking programmes isn't available with hon-revived yet. Choose the programme on the machine.`,
     st_note: n => `Picking programmes needs the hOn integration. With SmartThings, choose the programme on the machine,
           switch on Remote Control, and press Start on the ${n.toLowerCase()} card.`,
     running_note: n => `The ${n.toLowerCase()} is running. Pause it or put it in standby before starting another programme.`,
@@ -342,13 +343,22 @@ const ST = {
            weight_sensing: "Weighing", delay_wash: "Scheduled", wrinkle_prevent: "Anti-crease", refreshing: "Refresh",
            sanitizing: "Sanitising", internal_care: "Self clean", freeze_protection: "Freeze guard", finish: "Finished", finished: "Finished", none: "" },
 };
-const INTEGRATIONS = { hon: "hon", smartthings: "smartthings", samsung: "smartthings" };
+// hon-revived (mmalolepszy/hon-revived), English entity names. Beta: status only.
+//   sensor.<entity>_machine_status  ready | running | pause | scheduled | error | test | ending   (off, ready and finished are all "ready")
+//   sensor.<entity>_phase, _time_remaining (minutes), _program, _temperature, _spin, _cycles_total
+//   binary_sensor.<entity>_remote_control_enabled, _door_open
+const RV = {
+  machine: { ready: "Ready", running: "Running", pause: "Paused", scheduled: "Scheduled", error: "Error", ending: "Ending" },
+  phase: { ready: "", washing: "Washing", spin: "Spin", rinse: "Rinse", drying: "Drying", heat_stroke: "Drying", steam: "Steam", weighting: "Weighing",
+           scheduled: "Scheduled", tumbling: "Tumbling", refresh: "Refresh", heating: "Heating", cooldown: "Cooldown", unknown: "" },
+};
+const INTEGRATIONS = { hon: "hon", smartthings: "smartthings", samsung: "smartthings", "hon-revived": "revived", hon_revived: "revived" };
 const nice = v => String(v).replace(/_/g, " ").replace(/^\w/, c => c.toUpperCase());
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 function setup(c) {
   if (!DEFAULTS[c.appliance]) throw new Error("appliance must be washer or dryer");
   const d = DEFAULTS[c.appliance], integration = INTEGRATIONS[String(c.integration || "hon").toLowerCase()];
-  if (!integration) throw new Error("integration must be hon or smartthings");
+  if (!integration) throw new Error("integration must be hon, smartthings or hon-revived");
   const entity = c.entity || (integration === "smartthings" ? c.appliance : d.entity);
   return { ...c, integration, entity, title: c.name || d.title, ownTitle: !!c.name, colour: c.colour || d.colour,
     style: c.style === "drawn" ? "drawn" : "photo", images: c.images ? c.images.replace(/\/?$/, "/") : "",
@@ -531,7 +541,7 @@ class HonApplianceCard extends HTMLElement {
       { detail: { entityId: this._mainId() }, bubbles: true, composed: true })));
   }
 
-  _mainId() { const c = this._config; return c.integration === "smartthings" ? `sensor.${c.entity}_machine_state` : `binary_sensor.${c.entity}_status`; }
+  _mainId() { const c = this._config; return c.integration === "smartthings" ? `sensor.${c.entity}_machine_state` : c.integration === "revived" ? `sensor.${c.entity}_machine_status` : `binary_sensor.${c.entity}_status`; }
   _ask(what) {
     const r = this.shadowRoot, name = this._title(); this._asking = what;
     r.getElementById("ask").hidden = !what;
@@ -540,6 +550,7 @@ class HonApplianceCard extends HTMLElement {
   }
   async _send(action) {
     const r = this.shadowRoot, c = this._config, h = this._hass;
+    if (c.integration === "revived") return;   // status only: never sends anything to the machine
     r.getElementById("err").textContent = "";
     try {
       if (c.integration === "smartthings") {
@@ -653,9 +664,54 @@ class HonApplianceCard extends HTMLElement {
       canOff: !!power, canStart: powered && !on && !done && !!this._st(`select.${dev}`), door: null };
   }
 
+  // hon-revived: status only
+  _readRevived() {
+    const c = this._config, dev = c.entity, washer = c.appliance === "washer", T = k => this._tr(k);
+    const st = this._st(`sensor.${dev}_machine_status`), machine = st?.state ?? null, ph = this._val("phase");
+    const on = ["running", "pause", "scheduled", "ending"].includes(machine), paused = machine === "pause", waiting = machine === "scheduled";
+    const phase = ph != null ? (RV.phase[ph] != null ? T(RV.phase[ph]) : nice(ph)) : "", status = machine == null ? "—" : T(RV.machine[machine] || nice(machine));
+    const cool = on && ph === "cooldown";
+    const pill = machine == null ? T("Disconnected") : machine === "running" && phase ? phase : status;
+    // time_remaining is whole minutes; count down from when it last changed. Paused or scheduled: hold it still.
+    const rem = this._st(`sensor.${dev}_time_remaining`), mins = parseFloat(rem?.state), now = Date.now();
+    let end = NaN, hold = null;
+    if (on && mins > 0) {
+      const since = Date.parse(rem.last_updated);
+      if (paused || waiting) { hold = now; end = now + mins * 60000; }
+      else end = Math.max(now, (since <= now ? since : now) + mins * 60000);
+    }
+    // remember when the cycle began, for the ring (a pause must not move it)
+    const key = `hon-rv-start-${dev}`;
+    let start = NaN;
+    try {
+      if (on && !waiting) {
+        start = Number(localStorage.getItem(key));
+        if (!start || now - start > 24 * 3600e3) {
+          const since = Date.parse(st.last_changed);
+          start = machine === "running" && since < now ? since : now;
+          localStorage.setItem(key, String(start));
+        }
+      } else if (machine != null) localStorage.removeItem(key);
+    } catch (e) { start = on && !waiting ? Date.parse(st.last_changed) : NaN; }
+    const prog = this._val("program"), named = prog && !/^no[ _]program$/i.test(prog);
+    const rows = [[T("Programme"), named ? label(prog, c.names, this._lang) : "—", "programme"]];
+    if (washer) {
+      const t = this._val("temperature"), s = this._val("spin");
+      rows.push([T("Temp · Spin"), `${t != null ? t + " °C" : "—"} · ${s != null && s !== "0" ? s + " rpm" : "—"}`, "temp_spin"]);
+    } else {
+      const dl = this._val("dry_level");
+      rows.push([T("Dry level"), dl != null ? nice(dl) : "—", "dry_level"]);
+    }
+    rows.push([T("Status"), status, "status"]);
+    rows.push([T(on ? "Ends" : "Cycles"), on ? (isNaN(end) || paused || waiting ? "—" : hhmm(new Date(end), this._lang)) : this._val("cycles_total") ?? "—", "ends"]);
+    return { powered: on, on, done: false, cool, paused, phase, pill, start, end, hold, pct: null, rows, canOff: false, canStart: false, noControls: true,
+      door: this._st(`binary_sensor.${dev}_door_open`) };
+  }
+
   _render() {
     const r = this.shadowRoot, h = this._hass; if (!r || !h) return;
-    const s = this._config.integration === "smartthings" ? this._readST() : this._readHon();
+    const which = this._config.integration;
+    const s = which === "smartthings" ? this._readST() : which === "revived" ? this._readRevived() : this._readHon();
     const { powered, on, done, cool } = s;
     const card = r.querySelector("ha-card");
     card.classList.toggle("on", on); card.classList.toggle("off", !on && !done);
@@ -665,11 +721,11 @@ class HonApplianceCard extends HTMLElement {
     pill.className = "pill" + (cool ? " cool" : on ? " run" : done ? " done" : "");
     pill.textContent = s.pill;
     r.getElementById("phase").textContent = done ? this._tr("Finished") : s.phase;
-    this._t = { on, done, start: s.start, end: s.end, pct: s.pct, ready: powered && !on && !done };
+    this._t = { on, done, start: s.start, end: s.end, pct: s.pct, ready: powered && !on && !done, hold: s.hold };
 
-    const wifi = this._st(`binary_sensor.${this._config.entity}_remote_control`)?.state === "on";
+    const wifi = this._st(`binary_sensor.${this._config.entity}_remote_control${which === "revived" ? "_enabled" : ""}`)?.state === "on";
     const paused = on && s.paused;
-    r.getElementById("ctl").hidden = !powered || !wifi;   // the machine ignores remote commands unless Remote Control is on
+    r.getElementById("ctl").hidden = !powered || !wifi || !!s.noControls;   // the machine ignores remote commands unless Remote Control is on
     r.getElementById("start").hidden = !s.canStart;
     r.getElementById("pause").hidden = !on || paused;
     r.getElementById("resume").hidden = !paused;
@@ -694,7 +750,7 @@ class HonApplianceCard extends HTMLElement {
 
   _time() {
     const r = this.shadowRoot, t = this._t; if (!r || !t) return;
-    const now = Date.now(), left = isNaN(t.end) ? NaN : (t.end - now) / 1000;
+    const now = t.hold || Date.now(), left = isNaN(t.end) ? NaN : (t.end - now) / 1000;
     let pct = 0;
     if (t.done) pct = 100;
     else if (t.on && t.pct != null) pct = Math.min(100, Math.max(0, t.pct));   // the machine reports its own progress (SmartThings)
@@ -762,7 +818,7 @@ class HonProgrammesCard extends HTMLElement {
       // SmartThings doesn't give Home Assistant the cycle list, so there's nothing to pick from here
       r.innerHTML = `<style>${PCSS}</style><ha-card style="--c:${esc(c.colour)}">
         <div class="head"><span>${esc(this._tr("progs_title", title))}</span></div>
-        <div class="note">${esc(this._tr("st_note", title))}</div></ha-card>`;
+        <div class="note">${esc(this._tr(c.integration === "revived" ? "rv_note" : "st_note", title))}</div></ha-card>`;
       return;
     }
     r.innerHTML = `<style>${PCSS}</style><ha-card style="--c:${esc(c.colour)}">
