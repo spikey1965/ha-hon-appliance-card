@@ -32,7 +32,7 @@
 //                        programmes: [...]                    optional full list for the "All programmes" search
 
 
-const HON_CARD_VERSION = "2.4.0-beta.2";
+const HON_CARD_VERSION = "2.4.0-beta.3";
 
 // Built-in pictures (illustrations drawn for this card), so it's a single file that installs through HACS.
 const HON_IMG = {
@@ -351,6 +351,24 @@ const RV = {
   machine: { ready: "Ready", running: "Running", pause: "Paused", scheduled: "Scheduled", error: "Error", ending: "Ending" },
   phase: { ready: "", washing: "Washing", spin: "Spin", rinse: "Rinse", drying: "Drying", heat_stroke: "Drying", steam: "Steam", weighting: "Weighing",
            scheduled: "Scheduled", tumbling: "Tumbling", refresh: "Refresh", heating: "Heating", cooldown: "Cooldown", unknown: "" },
+};
+// a programme's name: your own from names:, else Home Assistant's translation, else tidied up from the key
+const rvName = (h, st, k, names, lang) => {
+  const own = label(k, names, lang);
+  if (own !== label(k, null, lang)) return own;
+  try { const f = st && h.formatEntityState?.(st, k); if (f && f !== k) return f; } catch (e) {}
+  return own;
+};
+// the appliance's connection sensor. Set up before hon-revived renamed it, it can still be called ..._remote_control, so look for
+// the connectivity sensor on the same device
+const rvConn = (h, dev) => {
+  const own = h?.states[`binary_sensor.${dev}_appliance_connection`];
+  if (own) return own;
+  const id = h?.entities?.[`sensor.${dev}_machine_status`]?.device_id;
+  if (!id) return null;
+  const hits = Object.values(h.entities).filter(e => e.device_id === id && e.entity_id.startsWith("binary_sensor.")
+    && h.states[e.entity_id]?.attributes?.device_class === "connectivity");
+  return hits.length === 1 ? h.states[hits[0].entity_id] : null;
 };
 const INTEGRATIONS = { hon: "hon", smartthings: "smartthings", samsung: "smartthings", "hon-revived": "revived", hon_revived: "revived" };
 const nice = v => String(v).replace(/_/g, " ").replace(/^\w/, c => c.toUpperCase());
@@ -674,10 +692,10 @@ class HonApplianceCard extends HTMLElement {
     // Off, ready and finished are all "ready". A cycle has finished if it turned "ready" after the machine was switched on
     // or, on machines without a connection sensor, after the door was shut and with the cycle counter going up since.
     // Everything changes at once when Home Assistant restarts, so a minute's difference is needed.
-    const conn = this._st(`binary_sensor.${dev}_appliance_connection`), doorS = this._st(`binary_sensor.${dev}_door_open`), cyc = this._st(`sensor.${dev}_cycles_total`);
+    const conn = rvConn(this._hass, dev), doorS = this._st(`binary_sensor.${dev}_door_open`), cyc = this._st(`sensor.${dev}_cycles_total`);
     const at = e => Date.parse(e?.last_changed || ""), after = (a, b) => at(a) - at(b) > 60000;
     const known = conn && (conn.state === "on" || conn.state === "off"), powered = known ? on || conn.state === "on" : on;
-    const ended = machine === "ready" && (known ? conn.state === "on" && after(st, conn) && !(parseFloat(this._st(`sensor.${dev}_time_remaining`)?.state) > 10)   // more left: it was stopped early
+    const ended = machine === "ready" && (known ? conn.state === "on" && after(st, conn) && (after(cyc, conn) || !(parseFloat(this._st(`sensor.${dev}_time_remaining`)?.state) > 10))   // more left: it was stopped early
       : doorS?.state === "off" && after(st, doorS) && after(cyc, doorS) && Date.now() - at(st) < 12 * 3600e3);
     const done = ended && !(doorS && doorS.state === "on");
     const idle = machine === "ready" && known && !powered;
@@ -707,7 +725,7 @@ class HonApplianceCard extends HTMLElement {
       } else if (machine != null) localStorage.removeItem(key);
     } catch (e) { start = on && !waiting ? Date.parse(st.last_changed) : NaN; }
     const prog = this._val("program"), named = prog && !/^no[ _]program$/i.test(prog);
-    const rows = [[T("Programme"), named ? label(prog, c.names, this._lang) : "—", "programme"]];
+    const rows = [[T("Programme"), named ? rvName(this._hass, this._st(`sensor.${dev}_program`), prog, c.names, this._lang) : "—", "programme"]];
     if (washer) {
       const t = this._val("temperature"), s = this._val("spin");
       rows.push([T("Temp · Spin"), `${t != null ? t + " °C" : "—"} · ${s != null && s !== "0" ? s + " rpm" : "—"}`, "temp_spin"]);
@@ -717,7 +735,7 @@ class HonApplianceCard extends HTMLElement {
     }
     rows.push([T("Status"), done ? T("Finished") : idle ? T("Off") : status, "status"]);
     rows.push([T(on ? "Ends" : "Cycles"), on ? (isNaN(end) || paused || waiting ? "—" : hhmm(new Date(Math.max(end, now + floor)), this._lang)) : this._val("cycles_total") ?? "—", "ends"]);
-    return { powered, on, done, cool, paused, phase: paused ? T("Paused") : phase, pill, start, end, hold, floor, pct: null, rows, canOff: false, canStart: false, noControls: true,
+    return { powered, on, done, cool, paused, phase: paused ? T("Paused") : phase, pill, start, end, hold, floor, idle, pct: null, rows, canOff: false, canStart: false, noControls: true,
       door: this._st(`binary_sensor.${dev}_door_open`) };
   }
 
@@ -745,7 +763,7 @@ class HonApplianceCard extends HTMLElement {
     r.getElementById("standby").hidden = !on;
     r.getElementById("off").hidden = !s.canOff;
     if (!powered) this._ask(null);
-    r.getElementById("wifi").classList.toggle("lit", wifi);
+    r.getElementById("wifi").classList.toggle("lit", wifi && !s.idle);
     const door = r.getElementById("door"), doorSensor = s.door;
     if (!doorSensor) {
       // no door sensor (most washers): the door is locked while a cycle is under way
