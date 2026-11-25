@@ -32,7 +32,7 @@
 //                        programmes: [...]                    optional full list for the "All programmes" search
 
 
-const HON_CARD_VERSION = "2.4.0-beta.1";
+const HON_CARD_VERSION = "2.4.0-beta.2";
 
 // Built-in pictures (illustrations drawn for this card), so it's a single file that installs through HACS.
 const HON_IMG = {
@@ -345,8 +345,8 @@ const ST = {
 };
 // hon-revived (mmalolepszy/hon-revived), English entity names. Beta: status only.
 //   sensor.<entity>_machine_status  ready | running | pause | scheduled | error | test | ending   (off, ready and finished are all "ready")
-//   sensor.<entity>_phase, _time_remaining (minutes), _program, _temperature, _spin, _cycles_total
-//   binary_sensor.<entity>_remote_control_enabled, _door_open
+//   sensor.<entity>_phase, _time_remaining (minutes), _program, _temperature, _spin, _drying_level, _cycles_total (not every machine)
+//   binary_sensor.<entity>_remote_control_enabled, _door_open, _appliance_connection (switched on; not every machine has the last two)
 const RV = {
   machine: { ready: "Ready", running: "Running", pause: "Paused", scheduled: "Scheduled", error: "Error", ending: "Ending" },
   phase: { ready: "", washing: "Washing", spin: "Spin", rinse: "Rinse", drying: "Drying", heat_stroke: "Drying", steam: "Steam", weighting: "Weighing",
@@ -671,14 +671,27 @@ class HonApplianceCard extends HTMLElement {
     const on = ["running", "pause", "scheduled", "ending"].includes(machine), paused = machine === "pause", waiting = machine === "scheduled";
     const phase = ph != null ? (RV.phase[ph] != null ? T(RV.phase[ph]) : nice(ph)) : "", status = machine == null ? "—" : T(RV.machine[machine] || nice(machine));
     const cool = on && ph === "cooldown";
-    const pill = machine == null ? T("Disconnected") : machine === "running" && phase ? phase : status;
+    // Off, ready and finished are all "ready". A cycle has finished if it turned "ready" after the machine was switched on
+    // or, on machines without a connection sensor, after the door was shut and with the cycle counter going up since.
+    // Everything changes at once when Home Assistant restarts, so a minute's difference is needed.
+    const conn = this._st(`binary_sensor.${dev}_appliance_connection`), doorS = this._st(`binary_sensor.${dev}_door_open`), cyc = this._st(`sensor.${dev}_cycles_total`);
+    const at = e => Date.parse(e?.last_changed || ""), after = (a, b) => at(a) - at(b) > 60000;
+    const known = conn && (conn.state === "on" || conn.state === "off"), powered = known ? on || conn.state === "on" : on;
+    const ended = machine === "ready" && (known ? conn.state === "on" && after(st, conn) && !(parseFloat(this._st(`sensor.${dev}_time_remaining`)?.state) > 10)   // more left: it was stopped early
+      : doorS?.state === "off" && after(st, doorS) && after(cyc, doorS) && Date.now() - at(st) < 12 * 3600e3);
+    const done = ended && !(doorS && doorS.state === "on");
+    const idle = machine === "ready" && known && !powered;
+    const pill = machine == null ? T("Disconnected") : done ? T("Finished") : idle ? T("Off") : machine === "running" && phase ? phase : status;
     // time_remaining is whole minutes; count down from when it last changed. Paused or scheduled: hold it still.
     const rem = this._st(`sensor.${dev}_time_remaining`), mins = parseFloat(rem?.state), now = Date.now();
-    let end = NaN, hold = null;
+    let end = NaN, hold = null, floor = 0;
     if (on && mins > 0) {
       const since = Date.parse(rem.last_updated);
       if (paused || waiting) { hold = now; end = now + mins * 60000; }
-      else end = Math.max(now, (since <= now ? since : now) + mins * 60000);
+      else {
+        end = Math.max(now, (since <= now ? since : now) + mins * 60000);
+        floor = (mins - 1) * 60000;   // the machine can stay on a minute (balancing the spin), so don't count on past its own figure
+      }
     }
     // remember when the cycle began, for the ring (a pause must not move it)
     const key = `hon-rv-start-${dev}`;
@@ -699,12 +712,12 @@ class HonApplianceCard extends HTMLElement {
       const t = this._val("temperature"), s = this._val("spin");
       rows.push([T("Temp · Spin"), `${t != null ? t + " °C" : "—"} · ${s != null && s !== "0" ? s + " rpm" : "—"}`, "temp_spin"]);
     } else {
-      const dl = this._val("dry_level");
-      rows.push([T("Dry level"), dl != null ? nice(dl) : "—", "dry_level"]);
+      const dl = this._val("drying_level") ?? this._val("dry_level");   // before the start it's only the dial's default
+      rows.push([T("Dry level"), dl != null && dl !== "no_dry" && (on || done) ? nice(dl) : "—", "dry_level"]);
     }
-    rows.push([T("Status"), status, "status"]);
-    rows.push([T(on ? "Ends" : "Cycles"), on ? (isNaN(end) || paused || waiting ? "—" : hhmm(new Date(end), this._lang)) : this._val("cycles_total") ?? "—", "ends"]);
-    return { powered: on, on, done: false, cool, paused, phase, pill, start, end, hold, pct: null, rows, canOff: false, canStart: false, noControls: true,
+    rows.push([T("Status"), done ? T("Finished") : idle ? T("Off") : status, "status"]);
+    rows.push([T(on ? "Ends" : "Cycles"), on ? (isNaN(end) || paused || waiting ? "—" : hhmm(new Date(Math.max(end, now + floor)), this._lang)) : this._val("cycles_total") ?? "—", "ends"]);
+    return { powered, on, done, cool, paused, phase: paused ? T("Paused") : phase, pill, start, end, hold, floor, pct: null, rows, canOff: false, canStart: false, noControls: true,
       door: this._st(`binary_sensor.${dev}_door_open`) };
   }
 
@@ -721,7 +734,7 @@ class HonApplianceCard extends HTMLElement {
     pill.className = "pill" + (cool ? " cool" : on ? " run" : done ? " done" : "");
     pill.textContent = s.pill;
     r.getElementById("phase").textContent = done ? this._tr("Finished") : s.phase;
-    this._t = { on, done, start: s.start, end: s.end, pct: s.pct, ready: powered && !on && !done, hold: s.hold };
+    this._t = { on, done, start: s.start, end: s.end, pct: s.pct, ready: powered && !on && !done, hold: s.hold, floor: s.floor || 0 };
 
     const wifi = this._st(`binary_sensor.${this._config.entity}_remote_control${which === "revived" ? "_enabled" : ""}`)?.state === "on";
     const paused = on && s.paused;
@@ -750,11 +763,11 @@ class HonApplianceCard extends HTMLElement {
 
   _time() {
     const r = this.shadowRoot, t = this._t; if (!r || !t) return;
-    const now = t.hold || Date.now(), left = isNaN(t.end) ? NaN : (t.end - now) / 1000;
+    const now = t.hold || Date.now(), end = t.floor ? Math.max(t.end, now + t.floor) : t.end, left = isNaN(end) ? NaN : (end - now) / 1000;
     let pct = 0;
     if (t.done) pct = 100;
     else if (t.on && t.pct != null) pct = Math.min(100, Math.max(0, t.pct));   // the machine reports its own progress (SmartThings)
-    else if (t.on && !isNaN(t.start) && !isNaN(t.end) && t.end > t.start) pct = Math.min(100, Math.max(0, (now - t.start) / (t.end - t.start) * 100));
+    else if (t.on && !isNaN(t.start) && !isNaN(end) && end > t.start) pct = Math.min(100, Math.max(0, (now - t.start) / (end - t.start) * 100));
     const bar = r.getElementById("bar"); bar.style.strokeDashoffset = String(100 - pct); bar.style.opacity = pct > 0 ? 1 : 0;
     // switched on but not started: show the selected programme's length, like the machine does
     r.getElementById("lcd").textContent = (t.on || t.ready) && !isNaN(left) ? fmt(t.ready ? Math.round(left / 60) * 60 : left)
