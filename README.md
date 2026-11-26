@@ -1,6 +1,6 @@
 # hOn Washer & Dryer Card for Home Assistant
 
-Dashboard cards for washing machines and tumble dryers in the **hOn** app (**Haier, Candy, Hoover**), and for **Samsung** machines through SmartThings ([see below](#samsung-smartthings)). The machine looks like the real thing: the time left on its own display, a progress ring round the door, laundry spinning in the drum, and buttons to pause it or start a programme without walking to the utility room.
+Dashboard cards for washing machines and tumble dryers in the **hOn** app (**Haier, Candy, Hoover**), for **Samsung** machines through SmartThings ([see below](#samsung-smartthings)), and with the **hon-revived** integration ([see below](#hon-revived)). The machine looks like the real thing: the time left on its own display, a progress ring round the door, laundry spinning in the drum, and buttons to pause it or start a programme without walking to the utility room.
 
 **📖 [Step-by-step guide and live demo](https://mymediabuild.uk/home-assistant-washer-dryer-card/)** · **☕ [Buy me a coffee](https://buymeacoffee.com/bobgreggr)**
 
@@ -89,7 +89,7 @@ entity: hoover_washer
 | Option | Card | What it does |
 |---|---|---|
 | `appliance` | both | `washer` or `dryer` (required) |
-| `integration` | both | `hon` (default) or `smartthings` for Samsung machines |
+| `integration` | both | `hon` (default), `smartthings` for Samsung machines, or `hon-revived` |
 | `entity` | both | Start of your entity IDs. Default `washing_machine` / `tumble_dryer` (SmartThings: `washer` / `dryer`) |
 | `name` | both | Card title. Default Washer / Dryer |
 | `colour` | both | Accent colour, e.g. `"#4fb3ff"` |
@@ -212,18 +212,41 @@ What's different from hOn:
 - **Stop** cancels the cycle (like Standby on hOn). **Off** appears if the machine has a power switch entity.
 - No programme name, dry level or cycle count, because the integration doesn't expose them.
 
+### hon-revived
+
+If you use the **[hon-revived](https://github.com/mmalolepszy/hon-revived)** integration instead of gvigroux/hon, add `integration: hon-revived` to both cards, and `entity` with the start of your entity IDs (if your sensor is `sensor.hw_411amc_1_80_machine_status`, that's `hw_411amc_1_80`):
+
+```yaml
+type: custom:hon-appliance-card
+appliance: washer
+integration: hon-revived
+entity: hw_411amc_1_80
+```
+
+```yaml
+type: custom:hon-programmes-card
+appliance: washer
+integration: hon-revived
+entity: hw_411amc_1_80
+```
+
+- The appliance card shows the status, phase, time left, programme, temperature and spin (or dry level), and **Finished** at the end of a cycle.
+- The programmes card lists the programmes from `select.<entity>_program`. Tap one, check the settings it shows, and press **Start**. Switch on Remote Control at the machine first.
+- No Pause / Resume buttons yet: resuming isn't reliable in hon-revived at the moment.
+- Tested on washers so far. If you try it on a dryer, an issue with how it went is very welcome.
+
 ## Support and requests
 
 I build and look after this card in my spare time.
 
 - **Found a bug?** [Open an issue](../../issues/new/choose) and fill in the form. A screenshot and the entity list help a lot.
-- **Want another brand or integration?** Pull requests are very welcome. I can only test machines I own, so I can't promise to add new ones myself. Use the "Support for another machine" form so all the details are in one place.
+- **Want another brand, integration or language?** I don't add those myself, but pull requests are very welcome. If you'd like it done for you, I do [custom card changes](https://mymediabuild.uk/custom-home-assistant-cards/).
 - **Other machines:** there are sister cards for [Candy Simply-Fi](https://github.com/spikey1965/ha-candy-appliance-card), [Miele](https://github.com/spikey1965/ha-miele-appliance-card) and [GE Appliances](https://github.com/spikey1965/ha-ge-appliance-card).
 - **Like the card?** A ⭐ on GitHub helps other people find it, and you can [buy me a coffee](https://buymeacoffee.com/bobgreggr) ☕. More free Home Assistant cards and guides at [mymediabuild.uk](https://mymediabuild.uk).
 
 ## Thanks
 
-Thanks to **gvigroux** for keeping the hOn integration working, to **Andre0512** for the original, and to **[@nielsnl-nielsnl-nl](https://github.com/nielsnl-nielsnl-nl)** for the Samsung SmartThings support.
+Thanks to **gvigroux** for keeping the hOn integration working, to **Andre0512** for the original, and to **[@nielsnl-nielsnl-nl](https://github.com/nielsnl-nielsnl-nl)** for the Samsung SmartThings support, to **mmalolepszy** for hon-revived, and to **[@sjonez](https://github.com/sjonez)** for testing the hon-revived support.
 
 More free Home Assistant cards and guides at [mymediabuild.uk](https://mymediabuild.uk), including a [step-by-step guide to this card](https://mymediabuild.uk/home-assistant-washer-dryer-card/) with a live demo. If you find it useful, you can [buy me a coffee](https://buymeacoffee.com/bobgreggr) ☕ (no pressure).
 
