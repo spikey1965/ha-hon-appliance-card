@@ -32,7 +32,7 @@
 //                        programmes: [...]                    optional full list for the "All programmes" search
 
 
-const HON_CARD_VERSION = "2.4.0";
+const HON_CARD_VERSION = "2.4.1";
 
 // Built-in pictures (illustrations drawn for this card), so it's a single file that installs through HACS.
 const HON_IMG = {
@@ -702,7 +702,13 @@ class HonApplianceCard extends HTMLElement {
     const conn = rvConn(this._hass, dev), doorS = this._st(`binary_sensor.${dev}_door_open`), cyc = this._st(`sensor.${dev}_cycles_total`);
     const at = e => Date.parse(e?.last_changed || ""), after = (a, b) => at(a) - at(b) > 60000;
     const known = conn && (conn.state === "on" || conn.state === "off"), powered = known ? on || conn.state === "on" : on;
-    const ended = machine === "ready" && (known ? conn.state === "on" && after(st, conn) && (after(cyc, conn) || !(parseFloat(this._st(`sensor.${dev}_time_remaining`)?.state) > 10))   // more left: it was stopped early
+    const left = parseFloat(this._st(`sensor.${dev}_time_remaining`)?.state);
+    // Some machines drop their connection a few minutes after a programme ends (auto standby) although nobody switched
+    // them off. If it went off 1-15 min after the cycle turned "ready", the cycle had really finished (counter went up or
+    // nothing left), and the door hasn't been opened since, the washing is still inside: keep showing Finished (up to 12 h).
+    const standby = known && conn.state === "off" && after(conn, st) && at(conn) - at(st) < 15 * 60000
+      && (Math.abs(at(cyc) - at(st)) < 10 * 60000 || !(left > 10)) && !(doorS && at(doorS) > at(st)) && Date.now() - at(st) < 12 * 3600e3;
+    const ended = machine === "ready" && (known ? (conn.state === "on" && after(st, conn) && (after(cyc, conn) || !(left > 10))) || standby   // more left: it was stopped early
       : doorS?.state === "off" && after(st, doorS) && after(cyc, doorS) && Date.now() - at(st) < 12 * 3600e3);
     const done = ended && !(doorS && doorS.state === "on");
     const idle = machine === "ready" && known && !powered;
